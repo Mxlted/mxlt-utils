@@ -28,6 +28,7 @@ private final class FixtureEvidence {
                                    "bundleID": Bundle.main.bundleIdentifier ?? "",
                                    "uptime": ProcessInfo.processInfo.systemUptime,
                                    "windows": controllers.compactMap { $0.evidence() },
+                                   "appScroll": (NSApp as? FixtureApplication)?.scrollEvidence ?? ["subclassActive": false],
                                    "events": events]
         guard let data = try? JSONSerialization.data(withJSONObject: state, options: [.sortedKeys]) else { return }
         try? data.write(to: URL(fileURLWithPath: statePath), options: .atomic)
@@ -42,6 +43,54 @@ private func eventPoint(_ point: NSPoint) -> [String: Double] {
 private func center(of view: NSView) -> [String: Double]? {
     guard let window = view.window else { return nil }
     return eventPoint(window.convertPoint(toScreen: view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)))
+}
+
+/// Aggregate receipt diagnostics distinguish WindowServer delivery from view dispatch.
+@objc(MxltUtilsFixtureApplication)
+final class FixtureApplication: NSApplication {
+    private var received = 0
+    private var tagged = 0
+    private var expectedWindow = 0
+    private var zeroWindow = 0
+    private var otherWindow = 0
+    private var insideContent = 0
+    private var outsideContent = 0
+    private var unresolvedWindow = 0
+    private var lastScrollPoint: [String: Any] = [:]
+
+    var scrollEvidence: [String: Any] {
+        ["subclassActive": true, "events": received, "taggedEvents": tagged,
+         "expectedWindow": expectedWindow, "zeroWindow": zeroWindow, "otherWindow": otherWindow,
+         "insideContent": insideContent, "outsideContent": outsideContent, "unresolvedWindow": unresolvedWindow,
+         "lastPoint": lastScrollPoint]
+    }
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .scrollWheel {
+            received += 1
+            if event.cgEvent?.getIntegerValueField(.eventSourceUserData) == 0x4D584C54 { tagged += 1 }
+            let fixtureWindows = (delegate as? FixtureDelegate)?.controllers.compactMap(\.window) ?? []
+            let expected = fixtureWindows.first { $0.windowNumber == event.windowNumber }
+            if event.windowNumber == 0 { zeroWindow += 1 }
+            else if expected != nil { expectedWindow += 1 }
+            else { otherWindow += 1 }
+            if let window = expected, let content = window.contentView {
+                let location = content.convert(event.locationInWindow, from: nil)
+                let global = window.convertToScreen(content.convert(content.bounds, to: nil))
+                let topLeft = eventPoint(NSPoint(x: global.minX, y: global.maxY))
+                lastScrollPoint = [
+                    "locationInWindow": ["x": event.locationInWindow.x, "y": event.locationInWindow.y],
+                    "locationInContent": ["x": location.x, "y": location.y],
+                    "cgLocation": event.cgEvent.map { ["x": $0.location.x, "y": $0.location.y] } ?? [:],
+                    "contentBounds": ["x": content.bounds.minX, "y": content.bounds.minY,
+                                      "width": content.bounds.width, "height": content.bounds.height],
+                    "contentGlobalFrame": ["x": topLeft["x"]!, "y": topLeft["y"]!,
+                                           "width": global.width, "height": global.height]
+                ]
+                if content.bounds.contains(location) { insideContent += 1 } else { outsideContent += 1 }
+            } else { unresolvedWindow += 1 }
+        }
+        super.sendEvent(event)
+    }
 }
 
 private final class FixtureWindow: NSWindow {
@@ -88,11 +137,36 @@ private final class FixtureScrollView: NSScrollView {
     var evidence: [String: Any] {
         ["events": scrollEvents, "taggedEvents": taggedEvents, "deltaX": deltaX, "deltaY": deltaY,
          "offsetX": contentView.bounds.minX, "offsetY": contentView.bounds.minY,
+         "middle": (documentView as? FixtureGrid)?.middleEvidence ?? [:],
          "anchor": center(of: contentView) ?? [:]]
     }
 }
 
 private final class FixtureGrid: NSView {
+    private var middleDowns = 0
+    private var middleUps = 0
+    private var middleActions = 0
+    private var unmatchedUps = 0
+    private var middlePressed = false
+    var middleEvidence: [String: Int] {
+        ["downs": middleDowns, "ups": middleUps, "actions": middleActions, "unmatchedUps": unmatchedUps]
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 2 else { super.otherMouseDown(with: event); return }
+        middleDowns += 1
+        middlePressed = bounds.contains(convert(event.locationInWindow, from: nil))
+    }
+    override func otherMouseUp(with event: NSEvent) {
+        guard event.buttonNumber == 2 else { super.otherMouseUp(with: event); return }
+        middleUps += 1
+        if middlePressed && bounds.contains(convert(event.locationInWindow, from: nil)) {
+            middleActions += 1
+            needsDisplay = true
+        } else { unmatchedUps += 1 }
+        middlePressed = false
+    }
+
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
         NSColor.textBackgroundColor.setFill()
@@ -106,6 +180,11 @@ private final class FixtureGrid: NSView {
                 "\(column), \(row)".draw(at: NSPoint(x: rect.minX + 10, y: rect.minY + 10),
                                         withAttributes: [.foregroundColor: NSColor.labelColor])
             }
+        }
+        if middleActions > 0 {
+            "Middle-click actions: \(middleActions)".draw(at: NSPoint(x: 8, y: 8),
+                withAttributes: [.foregroundColor: NSColor.labelColor,
+                                 .backgroundColor: NSColor.textBackgroundColor])
         }
     }
 }
@@ -260,7 +339,9 @@ final class FixtureWindowController: NSWindowController, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.center()
-        window.setFrameOrigin(NSPoint(x: window.frame.minX + CGFloat((number - 1) % 5) * 28,
+        let leftForSettings = ProcessInfo.processInfo.arguments.contains("--left-for-settings")
+        let firstOriginX = leftForSettings ? (NSScreen.screens.first?.visibleFrame.minX ?? 0) + 80 : window.frame.minX
+        window.setFrameOrigin(NSPoint(x: firstOriginX + CGFloat((number - 1) % 5) * 28,
                                       y: window.frame.minY - CGFloat((number - 1) % 5) * 28))
 
         let title = NSTextField(labelWithString: "mxlt-utils test fixture")
@@ -292,12 +373,14 @@ final class FixtureWindowController: NSWindowController, NSWindowDelegate {
         hint.font = .systemFont(ofSize: 12)
         hint.textColor = .secondaryLabelColor
         scrollView.hasVerticalScroller = true
+        scrollView.usesPredominantAxisScrolling = false
         scrollView.hasHorizontalScroller = true
         scrollView.borderType = .bezelBorder
         let grid = FixtureGrid(frame: NSRect(x: 0, y: 0, width: 1600, height: 1500))
         scrollView.documentView = grid
         nestedScrollView.frame = NSRect(x: 50, y: 55, width: 180, height: 150)
         nestedScrollView.hasHorizontalScroller = true
+        nestedScrollView.usesPredominantAxisScrolling = false
         nestedScrollView.hasVerticalScroller = true
         nestedScrollView.borderType = .bezelBorder
         nestedScrollView.documentView = FixtureGrid(frame: NSRect(x: 0, y: 0, width: 1200, height: 1200))
@@ -424,7 +507,7 @@ final class FixtureWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
-let application = NSApplication.shared
+let application = FixtureApplication.shared
 let delegate = FixtureDelegate()
 application.setActivationPolicy(.regular)
 application.delegate = delegate

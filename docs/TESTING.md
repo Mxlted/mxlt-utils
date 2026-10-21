@@ -33,4 +33,20 @@ Manual integration checks: repeated per-feature enable/disable, global pause/res
 
 The initial development environment is Apple silicon running macOS 27.0.1, with Xcode 27.1/Swift 6.4. The deployment target remains macOS 14. CI independently checks macOS 15/Xcode 16.4; CI architecture is not a published app architecture.
 
-Verification is still in progress for 0.1.0. Release notes record completed checks and any publication blocker. Wider macOS 14/15 runtime, Intel runtime, multiple displays/mixed scaling, separate-account installation, physical mouse input, and general application compatibility must not be inferred from compilation or notarization. Browser/Electron results must be recorded for the specific app tested, and never generalized to every browser.
+For 0.1.0, the complete automated suite passes **157 XCTest cases**: 64 retained quit-policy tests, 19 scroll/session-policy tests, and 74 native adapter/settings tests. The Developer ID Release configuration builds on the development machine. CI separately builds and tests with Xcode 16.4.
+
+Running-app evidence uses native synthetic CGEvents through WindowServer, with both features enabled. The disposable AppKit fixture verifies:
+
+- Short middle-click replay reaches the actual content view once, with paired tagged down/up and no orphan release.
+- Vertical/diagonal scrolling, continued movement while the pointer is stationary, dead-zone stop, release stop, Escape cancellation, nested-view routing, and crossing into another window without redirecting output.
+- Ordinary wheel input remains untagged and moves the native view.
+- Pause/disable while held stops scrolling, consumes the eventual release, cannot revive the canceled gesture on resume, and permits a fresh click. Three disable/enable cycles alternate passthrough and replay without changing CallQuits' enabled setting.
+- Graceful last-window red-button quit; native save cancellation beyond the attempt deadline; replacement windows; a minimized remaining window; native tab close and Command-W leaving a tab/window open.
+
+Chrome **156.0.8078.47** was tested with a separate disposable profile and the local browser fixture. Native synthetic input opened exactly one new tab from a short middle click; continuous outer and nested scrolling, stationary-pointer position, dead-zone/release and Escape stops, no leaked clicks, and no unintended extra tabs passed. DOM counters and actual scroll offsets were read through CDP; CDP did not generate input. This is Chrome coverage, not a claim about every Chromium/Electron application.
+
+The settings window was inspected at minimum size in dark appearance. Permission denial followed by a user-granted Accessibility recovery was exercised. Launch-at-login registration and unregistration both succeeded and were restored off. Light appearance uses native adaptive colors; a separate live light-appearance check remains useful.
+
+Native receipt alone was insufficient during development: a same-position `CGEventSetLocation` call erased window-local coordinates. Tests now require content-view actions/viewport movement, and the adapter preserves the original native location. The fixture explicitly disables AppKit's predominant-axis lock so diagonal assertions measure both axes; other apps may apply their own axis locking.
+
+Physical mouse input, actual permission revocation during a gesture, sleep/lock transitions, macOS 14/15 runtime, Intel runtime, multiple displays/mixed scaling, separate-account installation, live Discord, and broad Electron/application compatibility remain unverified. These are explicit preview limits, not inferred successes from compilation, policy tests, or notarization. Do not run another scroll remapper during isolated checks: its inversion/smoothing can alter the synthetic baseline.

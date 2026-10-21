@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'">
+<title>mxlt-utils browser fixture</title>
+<style>
+  :root { color-scheme: light dark; font: 14px system-ui, sans-serif; }
+  body { margin: 24px; max-width: 1100px; }
+  h1 { font-size: 22px; margin-bottom: 8px; }
+  p { line-height: 1.5; }
+  a { color: light-dark(#075ca8, #8bc6ff); }
+  #middle-link { display: inline-block; padding: 16px; border: 1px solid; border-radius: 8px; }
+  #outer { width: 820px; max-width: 95vw; height: 410px; overflow: auto; border: 2px solid; margin-top: 16px; }
+  #grid { position: relative; width: 1600px; height: 1500px; background: repeating-linear-gradient(0deg, transparent 0 49px, #85858555 49px 50px), repeating-linear-gradient(90deg, transparent 0 99px, #85858555 99px 100px); }
+  .hint { position: absolute; top: 25px; left: 25px; max-width: 285px; padding: 12px; background: Canvas; }
+  #nested { position: absolute; left: 400px; top: 48px; width: 350px; height: 260px; overflow: auto; border: 2px solid #7288bb; overscroll-behavior: contain; }
+  #nested-grid { width: 1200px; height: 1200px; padding: 16px; box-sizing: border-box; background: repeating-linear-gradient(0deg, #7288bb22 0 39px, #7288bb66 39px 40px), repeating-linear-gradient(90deg, transparent 0 79px, #7288bb66 79px 80px); }
+  pre { max-height: 260px; overflow: auto; border: 1px solid #858585; padding: 12px; font-size: 11px; }
+</style>
+<h1>mxlt-utils browser fixture</h1>
+<p id="status">Disposable, local-only page. Reload for fresh counters. This page never simulates input or prevents browser defaults.</p>
+<a id="middle-link" href="?opened=middle">Middle-click this link: one new background tab should open</a>
+<div id="outer" data-region="outer" aria-label="Outer two-axis scroll fixture">
+  <div id="grid">
+    <p class="hint">Hold the middle button here, then move down and right. The outer grid should scroll continuously while held. Return to the anchor or release to stop.</p>
+    <div id="nested" data-region="nested" aria-label="Nested two-axis scroll fixture">
+      <div id="nested-grid">Nested scroll area. Start a separate gesture inside this box.</div>
+    </div>
+  </div>
+</div>
+<p>Read aggregate evidence with <code>window.fixtureEvidence()</code>. Trusted DOM events include native synthetic input; they do not prove physical mouse input.</p>
+<pre id="evidence" aria-label="Aggregate fixture evidence"></pre>
+<script>
+(() => {
+  'use strict';
+  const outer = document.getElementById('outer');
+  const nested = document.getElementById('nested');
+  const link = document.getElementById('middle-link');
+  const output = document.getElementById('evidence');
+  const openedLink = new URLSearchParams(location.search).get('opened') === 'middle';
+  if (openedLink) document.getElementById('status').textContent = 'Opened-link fixture tab. This tab confirms the browser followed the disposable link.';
+  const counters = { middleDowns: 0, middleUps: 0, middleAuxClicks: 0, linkAuxClicks: 0, trustedMiddleEvents: 0, wheelEvents: 0, trustedWheelEvents: 0 };
+  const region = () => ({ wheelEvents: 0, deltaX: 0, deltaY: 0, scrollEvents: 0 });
+  const regions = { outer: region(), nested: region() };
+  const rect = element => {
+    const { x, y, width, height } = element.getBoundingClientRect();
+    return { x, y, width, height };
+  };
+  const regionEvidence = (name, element) => ({ ...regions[name], offsetX: element.scrollLeft, offsetY: element.scrollTop, rect: rect(element) });
+  window.fixtureEvidence = () => ({
+    schema: 1, fixture: 'mxlt-utils-browser', openedLink, counters: { ...counters },
+    outer: regionEvidence('outer', outer), nested: regionEvidence('nested', nested),
+    link: rect(link), viewport: { width: innerWidth, height: innerHeight, devicePixelRatio }
+  });
+  let renderPending = false;
+  const render = () => {
+    if (renderPending) return;
+    renderPending = true;
+    requestAnimationFrame(() => {
+      renderPending = false;
+      output.textContent = JSON.stringify(window.fixtureEvidence(), null, 2);
+    });
+  };
+  for (const [type, counter] of [['mousedown', 'middleDowns'], ['mouseup', 'middleUps'], ['auxclick', 'middleAuxClicks']]) {
+    document.addEventListener(type, event => {
+      if (event.button !== 1) return;
+      counters[counter]++;
+      if (event.isTrusted) counters.trustedMiddleEvents++;
+      if (type === 'auxclick' && link.contains(event.target)) counters.linkAuxClicks++;
+      render();
+    }, { capture: true, passive: true });
+  }
+  document.addEventListener('wheel', event => {
+    counters.wheelEvents++;
+    if (event.isTrusted) counters.trustedWheelEvents++;
+    const name = event.target instanceof Element ? event.target.closest('[data-region]')?.dataset.region : undefined;
+    if (regions[name]) {
+      regions[name].wheelEvents++;
+      regions[name].deltaX += event.deltaX;
+      regions[name].deltaY += event.deltaY;
+    }
+    render();
+  }, { capture: true, passive: true });
+  for (const [name, element] of [['outer', outer], ['nested', nested]]) {
+    element.addEventListener('scroll', () => { regions[name].scrollEvents++; render(); }, { passive: true });
+  }
+  addEventListener('resize', render, { passive: true });
+  render();
+})();
+</script>
+</html>

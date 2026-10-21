@@ -15,16 +15,19 @@ func argument(_ name: String) -> String? {
 }
 func number(_ dictionary: [String: Any], _ key: String) -> Double { (dictionary[key] as? NSNumber)?.doubleValue ?? 0 }
 func point(_ dictionary: [String: Any]) -> CGPoint { CGPoint(x: number(dictionary, "x"), y: number(dictionary, "y")) }
-func pause(_ seconds: Double) { Thread.sleep(forTimeInterval: seconds) }
+// Pump the main run loop so NSRunningApplication termination/activation state stays current.
+func pause(_ seconds: Double) { RunLoop.current.run(until: Date(timeIntervalSinceNow: seconds)) }
 let statePath = argument("--state-path") ?? ""
 let scenario = argument("--case") ?? ""
-let supported = ["click", "passthrough-click", "wheel", "scroll", "nested-scroll", "escape", "quit", "cancel-close", "replacement", "remaining-window", "tab-remains", "command-remains", "pin-target"]
+let supported = ["click", "passthrough-click", "wheel", "scroll", "nested-scroll", "escape", "quit", "cancel-close", "replacement", "remaining-window", "tab-remains", "command-remains", "pin-target", "pause-held", "disable-held", "toggle-cycles"]
+var restorationErrors: [String] = []
 var middleHeld = false
 var lastPoint = CGPoint.zero
 func mouse(_ type: CGEventType, at location: CGPoint, button: CGMouseButton) throws {
     guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: location, mouseButton: button) else {
         throw CheckFailure(description: "Could not construct a native mouse event")
     }
+    event.flags = []
     event.setIntegerValueField(.mouseEventClickState, value: 1)
     event.timestamp = CGEventTimestamp(ProcessInfo.processInfo.systemUptime * 1_000_000_000)
     event.post(tap: .cghidEventTap)
@@ -33,13 +36,23 @@ func mouse(_ type: CGEventType, at location: CGPoint, button: CGMouseButton) thr
     if type == .otherMouseUp { middleHeld = false }
 }
 func key(_ keyCode: CGKeyCode, flags: CGEventFlags = []) throws {
+    // Each test chord owns its synthetic modifiers and releases them even on failure.
+    defer {
+        if !flags.isEmpty, let release = CGEvent(keyboardEventSource: nil, virtualKey: 55, keyDown: false) {
+            release.type = .flagsChanged
+            release.flags = []
+            release.timestamp = CGEventTimestamp(ProcessInfo.processInfo.systemUptime * 1_000_000_000)
+            release.post(tap: .cghidEventTap)
+            pause(0.04)
+        }
+    }
     for pressed in [true, false] {
         guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: pressed) else {
             throw CheckFailure(description: "Could not construct a native key event")
         }
         event.flags = flags
         event.timestamp = CGEventTimestamp(ProcessInfo.processInfo.systemUptime * 1_000_000_000)
-    event.post(tap: .cghidEventTap)
+        event.post(tap: .cghidEventTap)
         pause(0.04)
     }
 }
@@ -53,6 +66,96 @@ func readState() throws -> [String: Any] {
 func windows(_ state: [String: Any]) -> [[String: Any]] { state["windows"] as? [[String: Any]] ?? [] }
 func events(_ state: [String: Any]) -> [String] { (state["events"] as? [[String: Any]] ?? []).compactMap { $0["event"] as? String } }
 func scroll(_ window: [String: Any]) -> [String: Any] { window[scenario == "nested-scroll" ? "nestedScroll" : "scroll"] as? [String: Any] ?? [:] }
+
+/// Uses the app's real public Settings controls, without synthetic clicks/keys or test hooks.
+/// The Settings window must already be open on General and must not cover the fixture anchor.
+final class UtilityControls {
+    private let application: NSRunningApplication
+    private let root: AXUIElement
+    let initialScroll: Bool
+    let initialPaused: Bool
+    let initialQuit: Bool
+
+    init() throws {
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.mxlted.mxlt-utils")
+            .filter { !$0.isTerminated }
+        guard running.count == 1 else { throw CheckFailure(description: "Lifecycle checks need exactly one running mxlt-utils app") }
+        application = running[0]
+        root = AXUIElementCreateApplication(application.processIdentifier)
+        AXUIElementSetMessagingTimeout(root, 0.12)
+        initialScroll = try Self.checkbox("Middle scrolling", root: root)
+        initialQuit = try Self.checkbox("CallQuits", root: root)
+        initialPaused = try Self.paused(root: root)
+    }
+    private static func value(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
+        var result: CFTypeRef?
+        return AXUIElementCopyAttributeValue(element, attribute as CFString, &result) == .success ? result : nil
+    }
+    private static func find(_ label: String, role: String, root: AXUIElement) throws -> AXUIElement? {
+        guard let windows = value(root, kAXWindowsAttribute) as? [AXUIElement], !windows.isEmpty else {
+            throw CheckFailure(description: "Open mxlt-utils Settings → General before lifecycle checks")
+        }
+        var queue = windows
+        var visited: [AXUIElement] = []
+        var matches: [AXUIElement] = []
+        let deadline = ProcessInfo.processInfo.systemUptime + 1
+        while !queue.isEmpty {
+            try require(visited.count < 400 && ProcessInfo.processInfo.systemUptime < deadline, "mxlt-utils Settings AX traversal exceeded its bound")
+            let element = queue.removeFirst()
+            if visited.contains(where: { CFEqual($0, element) }) { continue }
+            visited.append(element)
+            if value(element, kAXRoleAttribute) as? String == role,
+               [kAXTitleAttribute, kAXDescriptionAttribute].contains(where: { value(element, $0) as? String == label }) {
+                matches.append(element)
+            }
+            if let children = value(element, kAXChildrenAttribute) as? [AXUIElement] { queue.append(contentsOf: children) }
+        }
+        try require(matches.count <= 1, "Ambiguous mxlt-utils control: \(label)")
+        return matches.first
+    }
+    private static func checkbox(_ label: String, root: AXUIElement) throws -> Bool {
+        guard let element = try find(label, role: kAXCheckBoxRole, root: root),
+              let state = value(element, kAXValueAttribute) as? NSNumber else {
+            throw CheckFailure(description: "Cannot read the \(label) checkbox; open Settings → General")
+        }
+        return state.boolValue
+    }
+    private static func paused(root: AXUIElement) throws -> Bool {
+        if try find("Resume features", role: kAXButtonRole, root: root) != nil { return true }
+        if try find("Pause all features", role: kAXButtonRole, root: root) != nil { return false }
+        throw CheckFailure(description: "Cannot read the public Pause/Resume control")
+    }
+    private func validate() throws {
+        try require(!application.isTerminated && NSRunningApplication(processIdentifier: application.processIdentifier) == application,
+                    "The original mxlt-utils process changed; refusing to change controls")
+    }
+    private func press(_ label: String, role: String) throws {
+        try validate()
+        guard let element = try Self.find(label, role: role, root: root) else {
+            throw CheckFailure(description: "Missing mxlt-utils control \(label)")
+        }
+        try require(AXUIElementPerformAction(element, kAXPressAction as CFString) == .success,
+                    "Could not press mxlt-utils control \(label)")
+    }
+    func setScroll(_ enabled: Bool) throws {
+        if try Self.checkbox("Middle scrolling", root: root) != enabled { try press("Middle scrolling", role: kAXCheckBoxRole) }
+        pause(0.2)
+        try require(try Self.checkbox("Middle scrolling", root: root) == enabled, "Middle scrolling control did not reach the requested state")
+    }
+    func setPaused(_ paused: Bool) throws {
+        if try Self.paused(root: root) != paused { try press(paused ? "Pause all features" : "Resume features", role: kAXButtonRole) }
+        pause(0.2)
+        try require(try Self.paused(root: root) == paused, "Pause control did not reach the requested state")
+    }
+    func assertQuitUnchanged() throws {
+        try require(try Self.checkbox("CallQuits", root: root) == initialQuit, "The scrolling lifecycle changed CallQuits' enabled setting")
+    }
+    func restore() throws {
+        try setScroll(initialScroll)
+        try setPaused(initialPaused)
+        try assertQuitUnchanged()
+    }
+}
 
 func run() throws -> [String: Any] {
     try require(!statePath.isEmpty && supported.contains(scenario), "Usage: swift scripts/run-native-checks.swift --state-path build/fixture-state.json --case \(supported.joined(separator: "|"))")
@@ -113,8 +216,16 @@ func run() throws -> [String: Any] {
                displays.contains(rectangle), fixtureOwnsSystemHit() { return false }
             return rectangle.contains(location)
         }
-        try require(hit.map { number($0, kCGWindowOwnerPID as String) == Double(pid) } == true,
-                    "Another application covers the test point; refusing to inject a click")
+        if hit.map({ number($0, kCGWindowOwnerPID as String) == Double(pid) }) != true {
+            _ = fixtureOwnsSystemHit()
+            let nativePID = hit.map { Int(number($0, kCGWindowOwnerPID as String)) }
+            let nativeWindow = hit.map { Int(number($0, kCGWindowNumber as String)) }
+            let nativeLayer = hit.map { Int(number($0, kCGWindowLayer as String)) }
+            throw CheckFailure(description: "Another application covers the test point; refusing to inject a click " +
+                "(expectedPID=\(pid), nativePID=\(nativePID.map(String.init) ?? "none"), " +
+                "nativeWindow=\(nativeWindow.map(String.init) ?? "none"), nativeLayer=\(nativeLayer.map(String.init) ?? "none"), " +
+                "systemAXHitPID=\(systemHitPID.map(String.init) ?? "unavailable"))")
+        }
     }
     func currentWindow() throws -> [String: Any] {
         guard let window = windows(try readState()).first(where: { number($0, "windowID") == Double(windowID) }) else {
@@ -169,6 +280,13 @@ func run() throws -> [String: Any] {
                         scenario == "click" ? "The click was not replayed by mxlt-utils; interception is unproven" : "Disabled/excluded scrolling unexpectedly replayed the click")
         }
         try require(number(after, "unmatchedUps") == number(target, "unmatchedUps"), "Middle-up arrived without its down")
+        let viewBefore = originalScroll["middle"] as? [String: Any] ?? [:]
+        let viewAfter = scroll(after)["middle"] as? [String: Any] ?? [:]
+        for counter in ["downs", "ups", "actions"] {
+            try require(number(viewAfter, counter) - number(viewBefore, counter) == 1,
+                        "Short middle click did not deliver one paired action to the actual content view")
+        }
+        try require(number(viewAfter, "unmatchedUps") == number(viewBefore, "unmatchedUps"), "Content view received an unmatched middle-up")
         try require(number(scroll(after), "events") == number(originalScroll, "events"), "Short middle click unexpectedly scrolled")
     case "wheel":
         try mouse(.mouseMoved, at: anchor, button: .center); pause(0.1)
@@ -176,8 +294,9 @@ func run() throws -> [String: Any] {
             throw CheckFailure(description: "Could not construct a native wheel event")
         }
         event.location = anchor
+        event.flags = []
         event.timestamp = CGEventTimestamp(ProcessInfo.processInfo.systemUptime * 1_000_000_000)
-    event.post(tap: .cghidEventTap)
+        event.post(tap: .cghidEventTap)
         pause(0.3)
         let after = scroll(try currentWindow())
         try require(number(after, "events") > number(originalScroll, "events"), "Ordinary wheel input did not reach the fixture")
@@ -229,6 +348,67 @@ func run() throws -> [String: Any] {
                 try require(number(scroll(other), "events") == number(scroll(baseline), "events"), "Crossing a window edge redirected scroll to another window")
             }
         }
+    case "pause-held", "disable-held", "toggle-cycles":
+        let controls = try UtilityControls()
+        try require(controls.initialScroll && !controls.initialPaused, "Start lifecycle cases with middle scrolling on and global pause off")
+        defer {
+            if middleHeld { try? mouse(.otherMouseUp, at: lastPoint, button: .center) }
+            do { try controls.restore() } catch { restorationErrors.append(String(describing: error)) }
+        }
+        func shortClick(expectingReplay: Bool) throws {
+            try validate(); try validatePoint(anchor)
+            let before = try currentWindow()
+            try mouse(.mouseMoved, at: anchor, button: .center); pause(0.08)
+            try mouse(.otherMouseDown, at: anchor, button: .center); pause(0.07)
+            try mouse(.otherMouseUp, at: anchor, button: .center); pause(0.35)
+            let after = try currentWindow()
+            for counter in ["middleDowns", "middleUps", "middleClicks"] {
+                try require(number(after, counter) - number(before, counter) == 1, "Lifecycle transition broke paired click delivery")
+            }
+            for counter in ["replayedDowns", "replayedUps"] {
+                try require(number(after, counter) - number(before, counter) == (expectingReplay ? 1 : 0),
+                            "Lifecycle transition did not produce the expected interception state")
+            }
+            try require(number(after, "unmatchedUps") == number(before, "unmatchedUps"), "Lifecycle transition leaked an unmatched up")
+            let viewBefore = scroll(before)["middle"] as? [String: Any] ?? [:]
+            let viewAfter = scroll(after)["middle"] as? [String: Any] ?? [:]
+            for counter in ["downs", "ups", "actions"] {
+                try require(number(viewAfter, counter) - number(viewBefore, counter) == 1,
+                            "Lifecycle transition failed to deliver the click to the actual content view")
+            }
+            try require(number(viewAfter, "unmatchedUps") == number(viewBefore, "unmatchedUps"), "Lifecycle transition leaked an unmatched view-level up")
+            try controls.assertQuitUnchanged()
+        }
+        if scenario == "toggle-cycles" {
+            for _ in 0..<3 {
+                try controls.setScroll(false)
+                try shortClick(expectingReplay: false)
+                try controls.setScroll(true)
+                try shortClick(expectingReplay: true)
+            }
+        } else {
+            try mouse(.mouseMoved, at: anchor, button: .center); pause(0.1)
+            try mouse(.otherMouseDown, at: anchor, button: .center); pause(0.1)
+            let displaced = CGPoint(x: anchor.x + 65, y: anchor.y + 65)
+            try mouse(.otherMouseDragged, at: displaced, button: .center); pause(0.35)
+            try require(number(scroll(try currentWindow()), "taggedEvents") > number(originalScroll, "taggedEvents"),
+                        "Lifecycle cancellation is unproven because tagged scrolling never started")
+            if scenario == "pause-held" { try controls.setPaused(true) } else { try controls.setScroll(false) }
+            try validatePoint(anchor) // An obscuring Settings window must not masquerade as pause cleanup.
+            let stopped = scroll(try currentWindow())
+            pause(0.3)
+            try require(number(scroll(try currentWindow()), "events") == number(stopped, "events"), "Scrolling continued while paused or disabled")
+            if scenario == "pause-held" { try controls.setPaused(false) } else { try controls.setScroll(true) }
+            try mouse(.otherMouseDragged, at: CGPoint(x: displaced.x + 10, y: displaced.y + 10), button: .center)
+            pause(0.3)
+            try require(number(scroll(try currentWindow()), "events") == number(stopped, "events"), "Resuming revived the canceled held gesture")
+            try mouse(.otherMouseUp, at: lastPoint, button: .center); pause(0.25)
+            let released = try currentWindow()
+            try require(number(released, "middleDowns") == number(target, "middleDowns") && number(released, "middleUps") == number(target, "middleUps"),
+                        "Pause/disable leaked a suppressed button half")
+            try require(number(released, "middleClicks") == number(target, "middleClicks"), "Pause/disable replayed a canceled click")
+            try shortClick(expectingReplay: true)
+        }
     case "quit":
         try click(control("redClose"))
         try waitFor("A clean final red-button close did not request graceful quit", timeout: 5) { app.isTerminated }
@@ -273,11 +453,12 @@ func run() throws -> [String: Any] {
 }
 do {
     let result = try run()
+    try require(restorationErrors.isEmpty, "Could not restore settings: \(restorationErrors.joined(separator: "; "))")
     let data = try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
     print(String(decoding: data, as: UTF8.self))
 } catch {
     if middleHeld { try? mouse(.otherMouseUp, at: lastPoint, button: .center) }
-    let result: [String: Any] = ["case": scenario, "passed": false, "error": String(describing: error)]
+    let result: [String: Any] = ["case": scenario, "passed": false, "error": String(describing: error), "restorationErrors": restorationErrors]
     let data = (try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])) ?? Data()
     print(String(decoding: data, as: UTF8.self))
     exit(1)

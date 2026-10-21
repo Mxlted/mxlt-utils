@@ -17,7 +17,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleShortVersionString</key><string>1.0</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
-<key>NSPrincipalClass</key><string>NSApplication</string>
+<key>NSPrincipalClass</key><string>MxltUtilsFixtureApplication</string>
 </dict></plist>
 PLIST
 codesign --force --sign - "$APP"

@@ -29,7 +29,7 @@ Diagnostics are bounded, session-only state changes and verified close results. 
 - Finder, system processes, and mxlt-utils are always protected. Music, Spotify, Mail, Messages, FaceTime, Terminal, and iTerm start as editable quit exceptions. Discord retains the narrow verified hide-on-close handling from CallQuits.
 - Middle scrolling stays bound to the original app, window, and press location. A moved, covered, hidden, closed, or otherwise unverifiable target cancels the gesture. The anchor chooses the nested scroll view; moving across windows does not retarget it.
 - A short stationary middle press (up to half a second) is replayed as a paired click only after target validation. Longer stationary holds and canceled gestures are consumed. Middle-drag tools should be added to scrolling exceptions; Blender is excluded by default.
-- Ordinary wheel and trackpad input are unchanged. Secure input, unusual event frameworks, remote desktops, and other input remappers can limit compatibility. Physical mouse and multi-display coverage are listed separately in the testing guide.
+- Ordinary wheel and trackpad input are unchanged. Apps may apply their own axis locking. Secure input, unusual event frameworks, remote desktops, and other input remappers can limit compatibility. Physical mouse and multi-display coverage are listed separately in the testing guide.
 
 ## Troubleshooting
 
