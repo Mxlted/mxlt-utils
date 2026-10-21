@@ -15,6 +15,12 @@ Coverage includes close eligibility and native identity, down/up movement, short
 
 ## Running-app checks
 
+### Unreleased bookmark-folder click fix
+
+The automated suite passes 176 XCTest cases. Metadata regression tests cover normal windows, popup/submenu levels and floating/modal panels, plus dismissed, replaced, moved, resized, reowned, transparent or covered menus. Changing the pinned window's level also invalidates it. The separate Release bundle build and strict signature verification pass. These checks exercise target policy and event construction without posting input. They do not establish browser menu delivery.
+
+Manual app launches and mouse testing remain with the user. With Middle scrolling enabled, check short middle clicks on ordinary bookmarks, bookmarks in folders and nested folders, and page links. Each should open one new tab where the browser supports it. Also check held scrolling in page content and that dismissing or covering a captured popup cannot click through to the parent window. No running-app or physical-input result is claimed for this fix.
+
 ### 0.3.0 scrolling timing and icon
 
 Automated checks cover accepted-frame timing across skipped validation ticks, capped gaps without a backlog, resets after stopping, invalid timestamps, uneven frame intervals, and motion integration through 240 Hz. Speed-control tests also cover the extended speed ceiling, bounded delayed output in both smoothing modes, persisted values, corrupt-setting repair, and ignoring the removed smooth-speed preference. The full suite passes 173 XCTest cases; the separate Release bundle build and signature verification pass. The Fold icon is generated from its committed source image in all standard and Retina sizes, with explicit pixel dimensions. Manual app launch and mouse testing were reserved to the user for this release. No new app launches, synthetic input runs, or physical mouse checks are claimed here. Display-link delivery, perceived smoothness, and mixed-display behavior remain for manual testing.

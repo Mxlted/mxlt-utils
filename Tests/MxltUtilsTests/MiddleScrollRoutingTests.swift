@@ -18,7 +18,62 @@ final class MiddleScrollRoutingTests: XCTestCase {
 
     private func valid(_ windows: [[String: Any]]) -> Bool {
         MiddleScrollWindowRouting.isValid(windows: windows, processID: 42, windowID: 7,
-                                         initialBounds: bounds, anchor: anchor, ownProcessID: 99)
+                                         initialBounds: bounds, initialLayer: 0, anchor: anchor, ownProcessID: 99)
+    }
+
+    func testNormalWindowsMenusAndPanelsCanBePinnedAndRevalidated() throws {
+        for level in [NSWindow.Level.normal, .floating, .submenu, .modalPanel, .popUpMenu] {
+            let layer = Int(level.rawValue)
+            let metadata = window(layer: layer)
+            let snapshot = try XCTUnwrap(MiddleScrollWindowSnapshot(window: metadata, processID: 42,
+                                                                   windowID: 7, anchor: anchor))
+            XCTAssertEqual(snapshot.layer, layer)
+            XCTAssertEqual(snapshot.bounds, bounds)
+            XCTAssertTrue(MiddleScrollWindowRouting.isValid(
+                windows: [metadata, window(id: 8)], processID: 42, windowID: 7,
+                initialBounds: snapshot.bounds, initialLayer: snapshot.layer, anchor: anchor, ownProcessID: 99),
+                "A valid app-owned surface must not lose clicks just because it is above the normal level")
+        }
+    }
+
+    func testPopupCannotFallThroughToParentOrRetargetAfterChanging() throws {
+        let layer = Int(NSWindow.Level.popUpMenu.rawValue)
+        let popup = window(layer: layer)
+        let snapshot = try XCTUnwrap(MiddleScrollWindowSnapshot(window: popup, processID: 42,
+                                                               windowID: 7, anchor: anchor))
+        let parent = window(id: 8)
+        let invalidWindows = [
+            [parent], // Dismissed menu: never click the underlying browser window.
+            [window(id: 9, layer: layer), parent], // Replacement menu from the same app.
+            [window(owner: 43, layer: layer), parent],
+            [window(frame: bounds.offsetBy(dx: 1, dy: 0), layer: layer), parent],
+            [window(frame: CGRect(x: -500, y: 120, width: 401, height: 300), layer: layer), parent],
+            [window(layer: 0), parent], // Same ID and bounds, different level.
+            [window(layer: layer, alpha: 0), parent],
+            [window(id: 9, layer: layer), popup, parent], // Nested submenu covers the anchor.
+            [window(id: 9, owner: 43, layer: layer), popup, parent]
+        ]
+        for windows in invalidWindows {
+            XCTAssertFalse(MiddleScrollWindowRouting.isValid(
+                windows: windows, processID: 42, windowID: 7, initialBounds: snapshot.bounds,
+                initialLayer: snapshot.layer, anchor: anchor, ownProcessID: 99))
+        }
+    }
+
+    func testTargetSnapshotRejectsUncertainOrNoninteractiveMetadata() {
+        var invalid = [window(id: 8), window(owner: 43), window(layer: -1),
+                       window(alpha: 0), window(alpha: .nan),
+                       window(frame: CGRect(x: 0, y: 0, width: 100, height: 100))]
+        for key in [kCGWindowNumber, kCGWindowOwnerPID, kCGWindowLayer, kCGWindowAlpha, kCGWindowBounds] {
+            var metadata = window()
+            metadata.removeValue(forKey: key as String)
+            invalid.append(metadata)
+        }
+        for metadata in invalid {
+            XCTAssertNil(MiddleScrollWindowSnapshot(window: metadata, processID: 42, windowID: 7, anchor: anchor))
+        }
+        XCTAssertNil(MiddleScrollWindowSnapshot(window: window(), processID: 42, windowID: 7,
+                                               anchor: ScrollPoint(x: .nan, y: 200)))
     }
 
     func testSameWindowAtAnchorRemainsValidAcrossNegativeDisplayCoordinates() {
@@ -50,7 +105,7 @@ final class MiddleScrollRoutingTests: XCTestCase {
         let display = CGRect(x: -600, y: 0, width: 1000, height: 800)
         func permits(_ overlay: [String: Any], hitPID: Int32? = 42) -> Bool {
             MiddleScrollWindowRouting.isValid(windows: [overlay, window()], processID: 42, windowID: 7,
-                                             initialBounds: bounds, anchor: anchor, ownProcessID: 99,
+                                             initialBounds: bounds, initialLayer: 0, anchor: anchor, ownProcessID: 99,
                                              systemCanvases: [459: 20, 591: 21], displayBounds: [display], systemHitProcessID: hitPID)
         }
         XCTAssertTrue(permits(window(id: 15, owner: 459, frame: display, layer: 20)))

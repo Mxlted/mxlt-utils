@@ -76,10 +76,29 @@ enum MiddleScrollEventRouting {
     }
 }
 
+/// Pins an app-owned surface, including bookmark menus, popups and floating panels.
+/// Window level alone does not establish whether a native middle click is valid.
+struct MiddleScrollWindowSnapshot {
+    let bounds: CGRect
+    let layer: Int
+
+    init?(window: [String: Any], processID: pid_t, windowID: CGWindowID, anchor: ScrollPoint) {
+        guard let number = window[kCGWindowNumber as String] as? NSNumber, number.int64Value == Int64(windowID),
+              let owner = window[kCGWindowOwnerPID as String] as? NSNumber, owner.int64Value == Int64(processID),
+              let layer = window[kCGWindowLayer as String] as? NSNumber, layer.intValue >= 0,
+              let alpha = window[kCGWindowAlpha as String] as? NSNumber,
+              alpha.doubleValue.isFinite, alpha.doubleValue > 0,
+              anchor.isFinite, let bounds = MiddleScrollWindowRouting.bounds(window),
+              bounds.contains(CGPoint(x: anchor.x, y: anchor.y)) else { return nil }
+        self.bounds = bounds
+        self.layer = layer.intValue
+    }
+}
+
 /// WindowServer metadata policy, exercised without capturing a screen or contacting a real app.
 enum MiddleScrollWindowRouting {
     static func isValid(windows: [[String: Any]], processID: pid_t, windowID: CGWindowID,
-                        initialBounds: CGRect, anchor: ScrollPoint, ownProcessID: pid_t,
+                        initialBounds: CGRect, initialLayer: Int, anchor: ScrollPoint, ownProcessID: pid_t,
                         systemCanvases: [pid_t: Int] = [:], displayBounds: [CGRect] = [],
                         systemHitProcessID: pid_t? = nil) -> Bool {
         let point = CGPoint(x: anchor.x, y: anchor.y)
@@ -101,6 +120,7 @@ enum MiddleScrollWindowRouting {
             // covering the anchor cancels just like any other window or menu.
             if owner.int32Value == ownProcessID && layer.intValue == Int(NSWindow.Level.floating.rawValue) { continue }
             return number.uint32Value == windowID && owner.int32Value == processID && bounds == initialBounds
+                && layer.intValue == initialLayer
         }
         return false
     }

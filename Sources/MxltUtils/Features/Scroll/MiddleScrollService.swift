@@ -528,6 +528,7 @@ private final class MiddleScrollTarget: @unchecked Sendable {
     let windowID: CGWindowID
     let anchor: ScrollPoint
     private let initialBounds: CGRect
+    private let initialLayer: Int
     private let systemCanvases: [pid_t: Int]
     private let displayBounds: [CGRect]
 
@@ -537,15 +538,15 @@ private final class MiddleScrollTarget: @unchecked Sendable {
               let bundle = app.bundleIdentifier, !exclusions.contains(bundle.lowercased()),
               !app.isTerminated, !app.isHidden, app.isFinishedLaunching, app.activationPolicy == .regular,
               let window = Self.window(sequence.windowID),
-              let owner = window[kCGWindowOwnerPID as String] as? NSNumber, owner.int32Value == sequence.processID,
-              let bounds = Self.bounds(window), bounds.contains(CGPoint(x: sequence.anchor.x, y: sequence.anchor.y)),
-              (window[kCGWindowLayer as String] as? NSNumber)?.intValue == 0 else { return nil }
+              let snapshot = MiddleScrollWindowSnapshot(window: window, processID: sequence.processID,
+                                                        windowID: sequence.windowID, anchor: sequence.anchor) else { return nil }
         application = app
         bundleID = bundle
         processID = sequence.processID
         windowID = sequence.windowID
         anchor = sequence.anchor
-        initialBounds = bounds
+        initialBounds = snapshot.bounds
+        initialLayer = snapshot.layer
         var canvases: [pid_t: Int] = [:]
         for (bundleID, layer) in ["com.apple.dock": 20, "com.apple.notificationcenterui": 21] {
             let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
@@ -585,6 +586,7 @@ private final class MiddleScrollTarget: @unchecked Sendable {
         }
         return MiddleScrollWindowRouting.isValid(windows: windows, processID: processID,
                                                 windowID: windowID, initialBounds: initialBounds,
+                                                initialLayer: initialLayer,
                                                 anchor: anchor, ownProcessID: ProcessInfo.processInfo.processIdentifier,
                                                 systemCanvases: systemCanvases, displayBounds: displayBounds,
                                                 systemHitProcessID: systemHitProcessID)
@@ -592,9 +594,6 @@ private final class MiddleScrollTarget: @unchecked Sendable {
 
     private static func window(_ id: CGWindowID) -> [String: Any]? {
         (CGWindowListCopyWindowInfo(.optionIncludingWindow, id) as? [[String: Any]])?.first
-    }
-    private static func bounds(_ window: [String: Any]) -> CGRect? {
-        MiddleScrollWindowRouting.bounds(window)
     }
 }
 
