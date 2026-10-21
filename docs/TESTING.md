@@ -15,6 +15,10 @@ Coverage includes close eligibility and native identity, down/up movement, short
 
 ## Running-app checks
 
+### Unreleased scrolling timing
+
+Automated checks cover accepted-frame timing across skipped validation ticks, capped gaps without a backlog, resets after stopping, invalid timestamps, uneven frame intervals, and motion integration through 240 Hz. The full suite passes 170 XCTest cases; the separate ad hoc Release bundle build and signature verification pass. No app launches, synthetic input runs, or physical mouse checks were performed for this change. Display-link delivery, perceived smoothness, and mixed-display behavior remain for manual testing.
+
 ### 0.2.0 smoothing checks
 
 Version 0.2.0 adds motion-policy tests for eased speed changes, diagonal travel across timer frequencies, low-speed fractional accumulation, axis stops and reversals, direct-speed mode, invalid/delayed samples, and clearing motion on dead-zone return, release, cancellation, or reset. Settings tests cover the default-on smoothing choice and its persistence when disabled and relaunched. The local suite passes 165 XCTest cases and the separate Release app build passes.

@@ -8,7 +8,9 @@ Version 0.2.0 includes **Smooth scrolling**, enabled by default in Middle scroll
 
 The pure motion policy integrates an exponential velocity response with a 55 ms time constant and retains fractional points for low-speed travel. Each axis stops immediately at zero, and direction reversals discard old-direction velocity and fractional travel. Returning to the dead zone, release, or cancellation clears all motion state. There is no momentum after stopping.
 
-Output is requested at 60 Hz, subject to fresh target validation and run-loop scheduling. At most one current validation is pending; there is no extra AX work in input callbacks and no cached validation used to bypass the target checks. Each accepted step is capped at 1/30 second so delayed or skipped ticks cannot accumulate a catch-up burst. This is a scheduling target, not a measured frame-rate guarantee.
+Current source builds schedule smooth output with an [NSScreen display link](https://developer.apple.com/documentation/appkit/nsscreen/displaylink(target:selector:)) on the display containing the original anchor, requesting that screen's maximum refresh rate. Moving the pointer does not switch displays. Direct-speed mode and unavailable-display fallback use a 60 Hz timer. A separate timer checks release and permission state even if display callbacks pause; cancellation releases the display link immediately.
+
+Output remains subject to fresh target validation and run-loop scheduling. At most one current validation is pending; there is no extra AX work in input callbacks and no cached validation used to bypass the target checks. Travel uses elapsed time between accepted frames, so a skipped validation tick does not drop that interval's travel. Each accepted step is capped at 1/30 second with no backlog, and stopping resets the frame clock. These are scheduling policies, not measured frame-rate guarantees. Version 0.2.0 uses the earlier 60 Hz output timer.
 
 ## Routing and click preservation
 

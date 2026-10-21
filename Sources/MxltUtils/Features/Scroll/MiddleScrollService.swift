@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import MxltCore
+import QuartzCore
 
 /// Filters only a held middle-button sequence. Wheel and trackpad events never enter this tap.
 @MainActor
@@ -12,6 +13,7 @@ final class MiddleScrollService {
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var timer: Timer?
+    private var displayLink: CADisplayLink?
     private var observers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
     private var settings = ScrollSettings()
@@ -24,7 +26,7 @@ final class MiddleScrollService {
     private var target: MiddleScrollTarget?
     private var generation: UInt64 = 0
     private var validationWork: DispatchWorkItem?
-    private var lastTick = ProcessInfo.processInfo.systemUptime
+    private var frameClock = ScrollFrameClock()
     private var missingReleaseSince: TimeInterval?
     private let worker = DispatchQueue(label: "com.mxlted.mxlt-utils.scroll-target", qos: .userInteractive)
     private var indicator: MiddleScrollIndicator?
@@ -104,6 +106,8 @@ final class MiddleScrollService {
         generation &+= 1
         cancelValidationWork()
         target = nil
+        stopDisplayLink()
+        frameClock.reset()
         hideIndicator()
         if sequence != nil {
             gesture.cancel()
@@ -237,7 +241,9 @@ final class MiddleScrollService {
     }
 
     private func updatePointer(_ point: CGPoint) {
-        guard gesture.move(to: ScrollPoint(x: point.x, y: point.y)), let sequence else { return }
+        let activated = gesture.move(to: ScrollPoint(x: point.x, y: point.y))
+        if activated || gesture.velocity == .zero { frameClock.reset() }
+        guard activated, let sequence else { return }
         debugLog("gesture activated")
         let token = generation
         DispatchQueue.main.async { [weak self] in
@@ -256,22 +262,57 @@ final class MiddleScrollService {
         }
         debugLog("target prepared")
         self.target = target
-        validateAndScroll(generation: token, elapsed: 0)
+        startDisplayLink(at: sequence.anchor)
+        validateAndScroll(generation: token, initialInterval: 0)
     }
 
     private func ensureTimer() {
         guard timer == nil else { return }
-        lastTick = ProcessInfo.processInfo.systemUptime
         let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.tick() }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                // Keep button/permission cleanup alive even if display callbacks pause.
+                self.tick(initialInterval: self.displayLink == nil ? 1.0 / 60 : 0)
+            }
         }
         self.timer = timer
         RunLoop.main.add(timer, forMode: .common)
     }
 
-    private func stopTimer() { timer?.invalidate(); timer = nil }
+    private func startDisplayLink(at anchor: ScrollPoint) {
+        guard settings.smooth, displayLink == nil else { return }
+        // Use Quartz display bounds, matching the captured anchor even on screens
+        // above or left of the main display. Do not follow the moving pointer.
+        let point = CGPoint(x: anchor.x, y: anchor.y)
+        guard let screen = NSScreen.screens.first(where: { screen in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
+            return CGDisplayBounds(id.uint32Value).contains(point)
+        }) else { return } // The existing timer is the fallback.
+        let receiver = ScrollDisplayReceiver { [weak self] link in
+            guard let self, self.displayLink === link else { return }
+            self.tick(initialInterval: link.duration > 0 ? link.duration : 1.0 / 60)
+        }
+        let link = screen.displayLink(target: receiver, selector: #selector(ScrollDisplayReceiver.frame(_:)))
+        let maximum = Float(max(1, screen.maximumFramesPerSecond))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: min(60, maximum), maximum: maximum,
+                                                       preferred: maximum)
+        displayLink = link
+        link.add(to: .main, forMode: .common)
+    }
 
-    private func tick() {
+    private func stopDisplayLink() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
+    private func stopTimer() {
+        stopDisplayLink()
+        timer?.invalidate()
+        timer = nil
+        frameClock.reset()
+    }
+
+    private func tick(initialInterval: TimeInterval) {
         guard sequence != nil else { stopTimer(); return }
         guard AXIsProcessTrusted() else {
             enabled = false
@@ -286,6 +327,7 @@ final class MiddleScrollService {
         // up synchronously; this check never creates a replay or synthetic button release.
         let now = ProcessInfo.processInfo.systemUptime
         guard CGEventSource.buttonState(.combinedSessionState, button: .center) else {
+            frameClock.reset()
             // HID state can change before the queued up reaches this run loop. Stop scrolling
             // immediately, but give that matching up a short drain interval before teardown.
             if let since = missingReleaseSince, now - since >= 0.2 {
@@ -298,13 +340,11 @@ final class MiddleScrollService {
             return
         }
         missingReleaseSince = nil
-        let elapsed = min(1.0 / 30, max(0, now - lastTick))
-        lastTick = now
-        guard enabled, gesture.phase == .scrolling else { return }
-        validateAndScroll(generation: generation, elapsed: elapsed)
+        guard enabled, gesture.phase == .scrolling, initialInterval > 0 else { return }
+        validateAndScroll(generation: generation, initialInterval: initialInterval)
     }
 
-    private func validateAndScroll(generation token: UInt64, elapsed: TimeInterval) {
+    private func validateAndScroll(generation token: UInt64, initialInterval: TimeInterval) {
         guard validationWork == nil, let target, target.applicationIsValid else {
             if target != nil, !target!.applicationIsValid { cancel(reason: "target app invalid") }
             return
@@ -316,11 +356,12 @@ final class MiddleScrollService {
                 guard let self, token == self.generation else { return }
                 self.validationWork = nil
                 guard valid, target.applicationIsValid else { self.debugLog("active window validation failed"); self.cancel(reason: "target window invalid"); return }
-                guard self.enabled, self.gesture.phase == .scrolling, elapsed > 0,
+                guard self.enabled, self.gesture.phase == .scrolling, initialInterval > 0,
                       self.missingReleaseSince == nil,
                       CGEventSource.buttonState(.combinedSessionState, button: .center),
                       AXIsProcessTrusted() else { return }
                 guard ProcessInfo.processInfo.systemUptime - requestedAt < 0.1 else {
+                    self.frameClock.reset()
 #if DEBUG
                     if !self.debugStaleValidationReported {
                         self.debugStaleValidationReported = true
@@ -331,6 +372,9 @@ final class MiddleScrollService {
                 }
                 // Re-read current intent after validation; dead-zone return and cancellation
                 // clear both smoothing and fractional travel before any event can be posted.
+                guard self.gesture.velocity != .zero else { self.frameClock.reset(); return }
+                let elapsed = self.frameClock.advance(at: ProcessInfo.processInfo.systemUptime,
+                                                      initialInterval: initialInterval)
                 let delta = self.gesture.scrollDelta(elapsed: elapsed)
                 self.postScroll(delta: delta, target: target)
             }
@@ -443,6 +487,16 @@ final class MiddleScrollService {
         indicatorVisible = true
         indicator?.show(at: point)
     }
+}
+
+/// CADisplayLink retains its receiver; the callback captures the service weakly.
+@MainActor
+private final class ScrollDisplayReceiver: NSObject {
+    private let callback: (CADisplayLink) -> Void
+
+    init(callback: @escaping (CADisplayLink) -> Void) { self.callback = callback }
+
+    @objc func frame(_ link: CADisplayLink) { callback(link) }
 }
 
 /// Captures only original native routing evidence. Missing metadata leaves input untouched.

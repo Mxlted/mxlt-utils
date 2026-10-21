@@ -35,10 +35,23 @@ final class ScrollMotionTests: XCTestCase {
         let baseline = travel(hz: 60)
         XCTAssertEqual(baseline.x, 567, accuracy: 1)
         XCTAssertEqual(baseline.y, 756, accuracy: 1)
-        for hz in [30, 120] {
+        for hz in [30, 120, 144, 240] {
             XCTAssertEqual(travel(hz: hz).x, baseline.x, accuracy: 1)
             XCTAssertEqual(travel(hz: hz).y, baseline.y, accuracy: 1)
         }
+    }
+
+    func testUnevenAcceptedFrameIntervalsPreserveSmoothedTravel() {
+        func travel(_ intervals: [Double]) -> Double {
+            var motion = ScrollMotion()
+            return intervals.reduce(0) { result, elapsed in
+                result + Double(motion.step(toward: ScrollVelocity(x: 600, y: 800),
+                                            elapsed: elapsed, smooth: true).x)
+            }
+        }
+        let regular = Array(repeating: 1.0 / 120, count: 120)
+        let uneven = Array(repeating: [1.0 / 120, 3.0 / 120], count: 30).flatMap { $0 }
+        XCTAssertEqual(travel(uneven), travel(regular), accuracy: 1)
     }
 
     func testLowSpeedFractionalTravelAccumulatesInBothDirections() {

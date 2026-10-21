@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Align smooth middle scrolling with the anchor display's refresh rate, including high-refresh displays.
+- Keep scroll speed steadier when target validation skips a frame, with bounded travel after delays and immediate stops.
+
 ## 0.2.0
 
 - Add optional smooth middle scrolling, enabled by default, with eased speed changes and a 60 Hz output timer. Dead-zone return, release, and cancellation still stop immediately.
