@@ -119,7 +119,7 @@ final class ScrollGestureTests: XCTestCase {
     func testVeryLargeAndMixedDisplayCoordinatesStayBounded() {
         var gesture = ScrollGesture()
         gesture.begin(at: ScrollPoint(x: -2400, y: -500), timestamp: 1,
-                      settings: ScrollSettings(sensitivity: 3))
+                      settings: ScrollSettings(sensitivity: 10))
         gesture.move(to: ScrollPoint(x: 100_000, y: 100_000))
         XCTAssertEqual(hypot(gesture.velocity.x, gesture.velocity.y), ScrollGesture.maximumSpeed,
                        accuracy: 0.000001)
@@ -152,8 +152,23 @@ final class ScrollGestureTests: XCTestCase {
         XCTAssertEqual(ScrollSettings(sensitivity: .nan, deadZone: .infinity), ScrollSettings())
         XCTAssertEqual(ScrollSettings(sensitivity: -10, deadZone: -10).sensitivity, 0.2)
         XCTAssertEqual(ScrollSettings(sensitivity: -10, deadZone: -10).deadZone, 2)
-        XCTAssertEqual(ScrollSettings(sensitivity: 100, deadZone: 100).sensitivity, 3)
+        XCTAssertEqual(ScrollSettings(sensitivity: 100, deadZone: 100).sensitivity, 10)
         XCTAssertEqual(ScrollSettings(sensitivity: 100, deadZone: 100).deadZone, 40)
+    }
+
+    func testExtendedSpeedRangeIncreasesTravelAndPreservesExistingCeiling() {
+        func speed(_ sensitivity: Double, offset: Double) -> Double {
+            var gesture = ScrollGesture()
+            gesture.begin(at: origin, timestamp: 1, settings: ScrollSettings(sensitivity: sensitivity))
+            gesture.move(to: ScrollPoint(x: origin.x + offset, y: origin.y))
+            return gesture.velocity.x
+        }
+        XCTAssertEqual(speed(1, offset: 100), 736)
+        XCTAssertEqual(speed(3, offset: 100), 2208)
+        XCTAssertEqual(speed(10, offset: 100), 7360)
+        XCTAssertEqual(speed(1, offset: 100_000), 2400)
+        XCTAssertEqual(speed(3, offset: 100_000), 2400)
+        XCTAssertEqual(speed(10, offset: 100_000), 8000)
     }
 
     func testIdleEventsAndRepeatedCleanupDoNotInventGesture() {

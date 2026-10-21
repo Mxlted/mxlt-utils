@@ -17,7 +17,7 @@ Coverage includes close eligibility and native identity, down/up movement, short
 
 ### Unreleased scrolling timing
 
-Automated checks cover accepted-frame timing across skipped validation ticks, capped gaps without a backlog, resets after stopping, invalid timestamps, uneven frame intervals, and motion integration through 240 Hz. The full suite passes 170 XCTest cases; the separate ad hoc Release bundle build and signature verification pass. No app launches, synthetic input runs, or physical mouse checks were performed for this change. Display-link delivery, perceived smoothness, and mixed-display behavior remain for manual testing.
+Automated checks cover accepted-frame timing across skipped validation ticks, capped gaps without a backlog, resets after stopping, invalid timestamps, uneven frame intervals, and motion integration through 240 Hz. Speed-control tests also cover the extended speed ceiling, smooth response without changing steady speed, immediate stops at both response extremes, persisted values, and corrupt-setting repair. The full suite passes 174 XCTest cases; the separate ad hoc Release bundle build and signature verification pass. No app launches, synthetic input runs, or physical mouse checks were performed for this change. Display-link delivery, perceived smoothness, and mixed-display behavior remain for manual testing.
 
 ### 0.2.0 smoothing checks
 

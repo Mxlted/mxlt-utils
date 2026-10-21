@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Extend middle scroll speed to 10× and add a separate Smooth speed slider for adjusting how quickly speed changes ease in.
 - Align smooth middle scrolling with the anchor display's refresh rate, including high-refresh displays.
 - Keep scroll speed steadier when target validation skips a frame, with bounded travel after delays and immediate stops.
 

@@ -12,11 +12,11 @@ public struct ScrollDelta: Equatable, Sendable {
 struct ScrollMotion: Sendable {
     private var velocity = ScrollVelocity.zero
     private var remainder = ScrollVelocity.zero
-    private static let responseTime = 0.055
 
     mutating func step(toward target: ScrollVelocity, elapsed: TimeInterval,
-                       smooth: Bool) -> ScrollDelta {
+                       smooth: Bool, responseTime: TimeInterval = 0.055) -> ScrollDelta {
         guard elapsed.isFinite, elapsed > 0,
+              responseTime.isFinite, responseTime > 0,
               target.x.isFinite, target.y.isFinite,
               hypot(target.x, target.y) <= ScrollGesture.maximumSpeed + 0.000001 else {
             reset()
@@ -25,9 +25,9 @@ struct ScrollMotion: Sendable {
         // A delayed callback must not produce a catch-up jump.
         let dt = min(elapsed, 1.0 / 30)
         let x = stepAxis(target: target.x, current: velocity.x, remainder: remainder.x,
-                         elapsed: dt, smooth: smooth)
+                         elapsed: dt, smooth: smooth, responseTime: responseTime)
         let y = stepAxis(target: target.y, current: velocity.y, remainder: remainder.y,
-                         elapsed: dt, smooth: smooth)
+                         elapsed: dt, smooth: smooth, responseTime: responseTime)
         velocity = ScrollVelocity(x: x.velocity, y: y.velocity)
         remainder = ScrollVelocity(x: x.remainder, y: y.remainder)
         return ScrollDelta(x: x.delta, y: y.delta)
@@ -39,7 +39,7 @@ struct ScrollMotion: Sendable {
     }
 
     private func stepAxis(target: Double, current: Double, remainder: Double,
-                          elapsed: Double, smooth: Bool) -> (velocity: Double, remainder: Double, delta: Int32) {
+                          elapsed: Double, smooth: Bool, responseTime: TimeInterval) -> (velocity: Double, remainder: Double, delta: Int32) {
         // Stop each axis immediately. A reversal must never emit old-direction travel.
         guard target != 0 else { return (0, 0, 0) }
         let reversed = (target > 0 && current < 0) || (target < 0 && current > 0)
@@ -48,11 +48,11 @@ struct ScrollMotion: Sendable {
         let next: Double
         let distance: Double
         if smooth {
-            let blend = -expm1(-elapsed / Self.responseTime)
+            let blend = -expm1(-elapsed / responseTime)
             next = initial + (target - initial) * blend
             // Exact integration makes travel independent of tick frequency for a
             // constant target, including fractional points at very low speeds.
-            distance = target * elapsed + (initial - target) * Self.responseTime * blend
+            distance = target * elapsed + (initial - target) * responseTime * blend
         } else {
             next = target
             distance = target * elapsed

@@ -134,8 +134,8 @@ private struct ScrollPane: View {
         Text(model.status).font(.caption).foregroundStyle(.secondary)
         Text("Hold the wheel, then move away from where you pressed. Move farther to scroll faster. Return to the center to stop; release or press Escape to finish.").foregroundStyle(.secondary)
         VStack(alignment: .leading, spacing: 5) {
-            HStack { Text("Sensitivity"); Spacer(); Text(model.sensitivity, format: .number.precision(.fractionLength(1))).monospacedDigit().foregroundStyle(.secondary) }
-            Slider(value: $model.sensitivity, in: ScrollSettings.sensitivityRange, step: 0.1).accessibilityLabel("Sensitivity")
+            HStack { Text("Scroll speed"); Spacer(); Text("\(model.sensitivity, specifier: "%.1f")×").monospacedDigit().foregroundStyle(.secondary) }
+            Slider(value: $model.sensitivity, in: ScrollSettings.sensitivityRange, step: 0.1).accessibilityLabel("Scroll speed")
         }
         VStack(alignment: .leading, spacing: 5) {
             HStack { Text("Dead zone"); Spacer(); Text("\(Int(model.deadZone)) pt").monospacedDigit().foregroundStyle(.secondary) }
@@ -143,7 +143,14 @@ private struct ScrollPane: View {
         }
         Toggle("Reverse scroll direction", isOn: $model.reversed)
         Toggle("Smooth scrolling", isOn: $model.smooth)
-        Text("Ease into speed changes. Returning to the center or releasing still stops immediately.").font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack { Text("Smooth speed"); Spacer(); Text("\(model.smoothSpeed, specifier: "%.1f")×").monospacedDigit().foregroundStyle(.secondary) }
+            Slider(value: $model.smoothSpeed, in: ScrollSettings.smoothSpeedRange, step: 0.1)
+                .accessibilityLabel("Smooth speed")
+                .help("Higher values reach your scroll speed sooner.")
+        }
+        .disabled(!model.smooth)
+        Text("Higher smooth speed responds sooner; lower values ease in gradually. Returning to the center or releasing stops immediately.").font(.caption).foregroundStyle(.secondary)
         Text("Short middle clicks still work. Apps with their own middle-drag tools can be excluded below. Scrolling stays with the window where the press began.").font(.caption).foregroundStyle(.secondary)
         Divider()
         ExceptionList(title: "Leave middle-drag unchanged", exceptions: $model.exclusions, add: model.addException)

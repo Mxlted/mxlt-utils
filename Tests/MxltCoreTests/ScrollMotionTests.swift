@@ -2,6 +2,49 @@ import XCTest
 @testable import MxltCore
 
 final class ScrollMotionTests: XCTestCase {
+    func testSmoothSpeedChangesResponseButNotSteadySpeedOrImmediateStops() {
+        func gesture(speed: Double, smooth: Bool = true) -> ScrollGesture {
+            var gesture = ScrollGesture()
+            gesture.begin(at: ScrollPoint(x: 0, y: 0), timestamp: 1,
+                          settings: ScrollSettings(smooth: smooth, smoothSpeed: speed))
+            gesture.move(to: ScrollPoint(x: 83, y: 0)) // 600 points per second.
+            return gesture
+        }
+        var initialTravel: [Int32] = []
+        for speed in [0.2, 1.0, 3.0] {
+            var scrolling = gesture(speed: speed)
+            initialTravel.append((0..<6).reduce(0) { total, _ in total + scrolling.scrollDelta(elapsed: 1.0 / 60).x })
+            for _ in 0..<240 { _ = scrolling.scrollDelta(elapsed: 1.0 / 60) }
+            XCTAssertEqual(Double(scrolling.scrollDelta(elapsed: 1.0 / 60).x), 10, accuracy: 1)
+            for stop in ["center", "release", "cancel"] {
+                var stopped = scrolling
+                switch stop {
+                case "center": stopped.move(to: ScrollPoint(x: 0, y: 0))
+                case "release": _ = stopped.release(at: ScrollPoint(x: 83, y: 0), timestamp: 2, targetIsValid: true)
+                default: stopped.cancel()
+                }
+                XCTAssertEqual(stopped.scrollDelta(elapsed: 1.0 / 60), .zero)
+            }
+            var direct = gesture(speed: speed, smooth: false)
+            XCTAssertEqual(direct.scrollDelta(elapsed: 1.0 / 60).x, 10)
+        }
+        XCTAssertLessThan(initialTravel[0], initialTravel[1])
+        XCTAssertLessThan(initialTravel[1], initialTravel[2])
+    }
+
+    func testMaximumScrollSpeedStillBoundsDelayedOutput() {
+        for speed in [0.2, 3.0] {
+            var gesture = ScrollGesture()
+            gesture.begin(at: ScrollPoint(x: 0, y: 0), timestamp: 1,
+                          settings: ScrollSettings(sensitivity: 10, smoothSpeed: speed))
+            gesture.move(to: ScrollPoint(x: 100_000, y: 100_000))
+            for _ in 0..<240 { _ = gesture.scrollDelta(elapsed: 1.0 / 60) }
+            let delta = gesture.scrollDelta(elapsed: 5)
+            XCTAssertGreaterThan(hypot(Double(delta.x), Double(delta.y)), 80)
+            XCTAssertLessThanOrEqual(hypot(Double(delta.x), Double(delta.y)), 8000.0 / 30 + 2)
+        }
+    }
+
     func testStartAndSpeedChangesEaseWithoutOvershoot() {
         var motion = ScrollMotion()
         let dt = 1.0 / 60
@@ -97,7 +140,7 @@ final class ScrollMotionTests: XCTestCase {
             XCTAssertEqual(motion.step(toward: ScrollVelocity(x: 2400, y: 0), elapsed: elapsed, smooth: true), .zero)
         }
         for target in [ScrollVelocity(x: .nan, y: 0), ScrollVelocity(x: 0, y: .infinity),
-                       ScrollVelocity(x: 2400, y: 2400)] {
+                       ScrollVelocity(x: 8000, y: 8000)] {
             XCTAssertEqual(motion.step(toward: target, elapsed: 1.0 / 60, smooth: true), .zero)
         }
         var fresh = ScrollMotion()

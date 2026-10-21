@@ -27,18 +27,27 @@ public struct ScrollVelocity: Equatable, Sendable {
 }
 
 public struct ScrollSettings: Equatable, Sendable {
-    public static let sensitivityRange = 0.2...3.0
+    public static let sensitivityRange = 0.2...10.0
+    public static let smoothSpeedRange = 0.2...3.0
     public static let deadZoneRange = 2.0...40.0
     public let sensitivity: Double
     public let deadZone: Double
     public let reversed: Bool
     public let smooth: Bool
+    public let smoothSpeed: Double
 
-    public init(sensitivity: Double = 1, deadZone: Double = 8, reversed: Bool = false, smooth: Bool = true) {
+    // Preserve the established speed ceiling for existing settings; the extended
+    // range raises it proportionally, up to 8,000 points per second at 10x.
+    var speedLimit: Double { 2_400 * max(1, sensitivity / 3) }
+    var responseTime: TimeInterval { 0.055 / smoothSpeed }
+
+    public init(sensitivity: Double = 1, deadZone: Double = 8, reversed: Bool = false, smooth: Bool = true,
+                smoothSpeed: Double = 1) {
         self.sensitivity = Self.sanitize(sensitivity, fallback: 1, range: Self.sensitivityRange)
         self.deadZone = Self.sanitize(deadZone, fallback: 8, range: Self.deadZoneRange)
         self.reversed = reversed
         self.smooth = smooth
+        self.smoothSpeed = Self.sanitize(smoothSpeed, fallback: 1, range: Self.smoothSpeedRange)
     }
 
     private static func sanitize(_ value: Double, fallback: Double, range: ClosedRange<Double>) -> Double {
@@ -63,7 +72,7 @@ public struct ScrollGesture: Sendable {
     public enum Phase: Equatable, Sendable { case idle, pending, scrolling, cancelled }
 
     public static let maximumClickDuration: TimeInterval = 0.5
-    public static let maximumSpeed: Double = 2_400
+    public static let maximumSpeed: Double = 8_000
     public private(set) var phase: Phase = .idle
     public private(set) var anchor: ScrollPoint?
     public private(set) var velocity: ScrollVelocity = .zero
@@ -111,7 +120,7 @@ public struct ScrollGesture: Sendable {
         }
         let activated = phase == .pending
         phase = .scrolling
-        let speed = min(Self.maximumSpeed, (distance - settings.deadZone) * 8 * settings.sensitivity)
+        let speed = min(settings.speedLimit, (distance - settings.deadZone) * 8 * settings.sensitivity)
         let direction = settings.reversed ? -1.0 : 1.0
         velocity = ScrollVelocity(x: dx / distance * speed * direction,
                                   y: dy / distance * speed * direction)
@@ -124,7 +133,8 @@ public struct ScrollGesture: Sendable {
             motion.reset()
             return .zero
         }
-        return motion.step(toward: velocity, elapsed: elapsed, smooth: settings.smooth)
+        return motion.step(toward: velocity, elapsed: elapsed, smooth: settings.smooth,
+                           responseTime: settings.responseTime)
     }
 
     /// Checks the release position too: a missed final move must not become a
