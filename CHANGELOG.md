@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add optional smooth middle scrolling, enabled by default, with eased speed changes and a 60 Hz output timer. Dead-zone return, release, and cancellation still stop immediately.
+- Preserve the smoothing preference across feature toggles and relaunches; keep ordinary wheel and trackpad input unchanged.
+- Refresh project documentation.
+
 ## 0.1.0
 
 - New native menu bar app with independent feature switches, global pause, compact settings, Accessibility recovery, optional launch at login, and session-only diagnostics.

@@ -32,11 +32,13 @@ public struct ScrollSettings: Equatable, Sendable {
     public let sensitivity: Double
     public let deadZone: Double
     public let reversed: Bool
+    public let smooth: Bool
 
-    public init(sensitivity: Double = 1, deadZone: Double = 8, reversed: Bool = false) {
+    public init(sensitivity: Double = 1, deadZone: Double = 8, reversed: Bool = false, smooth: Bool = true) {
         self.sensitivity = Self.sanitize(sensitivity, fallback: 1, range: Self.sensitivityRange)
         self.deadZone = Self.sanitize(deadZone, fallback: 8, range: Self.deadZoneRange)
         self.reversed = reversed
+        self.smooth = smooth
     }
 
     private static func sanitize(_ value: Double, fallback: Double, range: ClosedRange<Double>) -> Double {
@@ -67,6 +69,7 @@ public struct ScrollGesture: Sendable {
     public private(set) var velocity: ScrollVelocity = .zero
     private var settings = ScrollSettings()
     private var startedAt: TimeInterval = 0
+    private var motion = ScrollMotion()
 
     public init() {}
 
@@ -80,6 +83,7 @@ public struct ScrollGesture: Sendable {
         startedAt = timestamp
         self.settings = settings
         velocity = .zero
+        motion.reset()
         phase = .pending
         return true
     }
@@ -102,6 +106,7 @@ public struct ScrollGesture: Sendable {
         }
         guard distance > settings.deadZone else {
             velocity = .zero
+            motion.reset()
             return false
         }
         let activated = phase == .pending
@@ -111,6 +116,15 @@ public struct ScrollGesture: Sendable {
         velocity = ScrollVelocity(x: dx / distance * speed * direction,
                                   y: dy / distance * speed * direction)
         return activated
+    }
+
+    /// Called only after native target validation. Never queues travel for later delivery.
+    public mutating func scrollDelta(elapsed: TimeInterval) -> ScrollDelta {
+        guard phase == .scrolling, velocity != .zero else {
+            motion.reset()
+            return .zero
+        }
+        return motion.step(toward: velocity, elapsed: elapsed, smooth: settings.smooth)
     }
 
     /// Checks the release position too: a missed final move must not become a
@@ -132,6 +146,7 @@ public struct ScrollGesture: Sendable {
         guard phase != .idle else { return }
         phase = .cancelled
         velocity = .zero
+        motion.reset()
     }
 
     /// For final teardown after the native adapter has handled its input pairing.
@@ -139,6 +154,7 @@ public struct ScrollGesture: Sendable {
         phase = .idle
         anchor = nil
         velocity = .zero
+        motion.reset()
         startedAt = 0
     }
 }

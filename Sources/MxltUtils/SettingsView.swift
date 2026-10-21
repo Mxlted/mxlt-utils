@@ -142,6 +142,8 @@ private struct ScrollPane: View {
             Slider(value: $model.deadZone, in: ScrollSettings.deadZoneRange, step: 1).accessibilityLabel("Dead zone")
         }
         Toggle("Reverse scroll direction", isOn: $model.reversed)
+        Toggle("Smooth scrolling", isOn: $model.smooth)
+        Text("Ease into speed changes. Returning to the center or releasing still stops immediately.").font(.caption).foregroundStyle(.secondary)
         Text("Short middle clicks still work. Apps with their own middle-drag tools can be excluded below. Scrolling stays with the window where the press began.").font(.caption).foregroundStyle(.secondary)
         Divider()
         ExceptionList(title: "Leave middle-drag unchanged", exceptions: $model.exclusions, add: model.addException)

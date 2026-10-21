@@ -24,15 +24,16 @@ final class ScrollModel: ObservableObject {
         }
     }
     @Published var reversed: Bool { didSet { defaults.set(reversed, forKey: "scroll.reversed") } }
+    @Published var smooth: Bool { didSet { defaults.set(smooth, forKey: "scroll.smooth") } }
     @Published var exclusions: [AppException] {
         didSet { if let data = try? JSONEncoder().encode(exclusions) { defaults.set(data, forKey: "scroll.exclusions") } }
     }
     @Published var status = "Off"
-    var settings: ScrollSettings { ScrollSettings(sensitivity: sensitivity, deadZone: deadZone, reversed: reversed) }
+    var settings: ScrollSettings { ScrollSettings(sensitivity: sensitivity, deadZone: deadZone, reversed: reversed, smooth: smooth) }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        defaults.register(defaults: ["scroll.sensitivity": 1.0, "scroll.deadZone": 8.0])
+        defaults.register(defaults: ["scroll.sensitivity": 1.0, "scroll.deadZone": 8.0, "scroll.smooth": true])
         enabled = defaults.bool(forKey: "scroll.enabled")
         let savedSettings = ScrollSettings(sensitivity: defaults.double(forKey: "scroll.sensitivity"),
                                            deadZone: defaults.double(forKey: "scroll.deadZone"),
@@ -40,6 +41,7 @@ final class ScrollModel: ObservableObject {
         sensitivity = savedSettings.sensitivity
         deadZone = savedSettings.deadZone
         reversed = savedSettings.reversed
+        smooth = defaults.bool(forKey: "scroll.smooth")
         defaults.set(savedSettings.sensitivity, forKey: "scroll.sensitivity")
         defaults.set(savedSettings.deadZone, forKey: "scroll.deadZone")
         exclusions = defaults.data(forKey: "scroll.exclusions").flatMap { try? JSONDecoder().decode([AppException].self, from: $0) } ?? [
@@ -91,6 +93,7 @@ final class UtilityModel: ObservableObject {
         let sensitivity: Double
         let deadZone: Double
         let reversed: Bool
+        let smooth: Bool
         let exclusions: Set<String>
     }
     var status: String {
@@ -178,6 +181,7 @@ final class UtilityModel: ObservableObject {
         let shouldScroll = scroll.enabled && !suspended && quit.accessibilityGranted
         if shouldScroll && !scrollFailed {
             let configuration = ScrollConfiguration(sensitivity: scroll.sensitivity, deadZone: scroll.deadZone, reversed: scroll.reversed,
+                                                    smooth: scroll.smooth,
                                                     exclusions: Set(scroll.exclusions.map { $0.bundleID.lowercased() }))
             if scrollConfiguration != configuration {
                 scrollService.stop()

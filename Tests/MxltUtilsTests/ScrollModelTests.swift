@@ -15,6 +15,7 @@ final class ScrollModelTests: XCTestCase {
         let model = ScrollModel(defaults: makeDefaults())
         XCTAssertFalse(model.enabled)
         XCTAssertEqual(model.settings, ScrollSettings())
+        XCTAssertTrue(model.smooth)
         XCTAssertEqual(model.status, "Off")
         XCTAssertTrue(model.exclusions.contains { $0.bundleID == "org.blenderfoundation.blender" })
     }
@@ -27,11 +28,12 @@ final class ScrollModelTests: XCTestCase {
         model.sensitivity = 2.1
         model.deadZone = 17
         model.reversed = true
+        model.smooth = false
         model.exclusions = [AppException(bundleID: "example.cad", name: "CAD")]
         model.enabled = false
         let restored = ScrollModel(defaults: defaults)
         XCTAssertFalse(restored.enabled)
-        XCTAssertEqual(restored.settings, ScrollSettings(sensitivity: 2.1, deadZone: 17, reversed: true))
+        XCTAssertEqual(restored.settings, ScrollSettings(sensitivity: 2.1, deadZone: 17, reversed: true, smooth: false))
         XCTAssertEqual(restored.exclusions, model.exclusions)
         restored.enabled = true
         XCTAssertEqual(restored.settings, model.settings)

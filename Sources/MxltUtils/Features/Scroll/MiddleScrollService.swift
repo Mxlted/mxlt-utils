@@ -26,7 +26,6 @@ final class MiddleScrollService {
     private var validationWork: DispatchWorkItem?
     private var lastTick = ProcessInfo.processInfo.systemUptime
     private var missingReleaseSince: TimeInterval?
-    private var remainder = ScrollVelocity(x: 0, y: 0)
     private let worker = DispatchQueue(label: "com.mxlted.mxlt-utils.scroll-target", qos: .userInteractive)
     private var indicator: MiddleScrollIndicator?
     private var indicatorVisible = false
@@ -106,7 +105,6 @@ final class MiddleScrollService {
         cancelValidationWork()
         target = nil
         hideIndicator()
-        remainder = ScrollVelocity(x: 0, y: 0)
         if sequence != nil {
             gesture.cancel()
             ensureTimer()
@@ -264,7 +262,7 @@ final class MiddleScrollService {
     private func ensureTimer() {
         guard timer == nil else { return }
         lastTick = ProcessInfo.processInfo.systemUptime
-        let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
         self.timer = timer
@@ -331,9 +329,10 @@ final class MiddleScrollService {
 #endif
                     return
                 }
-                // Velocity is re-read so returning to the dead zone takes effect before posting.
-                let current = self.gesture.velocity
-                self.postScroll(velocity: current, elapsed: elapsed, target: target)
+                // Re-read current intent after validation; dead-zone return and cancellation
+                // clear both smoothing and fractional travel before any event can be posted.
+                let delta = self.gesture.scrollDelta(elapsed: elapsed)
+                self.postScroll(delta: delta, target: target)
             }
         }
         validationWork = work
@@ -347,12 +346,9 @@ final class MiddleScrollService {
         validationWork = nil
     }
 
-    private func postScroll(velocity: ScrollVelocity, elapsed: TimeInterval, target: MiddleScrollTarget) {
-        let x = remainder.x - velocity.x * elapsed
-        let y = remainder.y - velocity.y * elapsed
-        let dx = Int32(x.rounded(.towardZero))
-        let dy = Int32(y.rounded(.towardZero))
-        remainder = ScrollVelocity(x: x - Double(dx), y: y - Double(dy))
+    private func postScroll(delta: ScrollDelta, target: MiddleScrollTarget) {
+        let dx = -delta.x
+        let dy = -delta.y
         guard dx != 0 || dy != 0 else { return }
         guard let template = sequence?.down,
               let event = MiddleScrollEventRouting.scrollEvent(template: template, deltaX: dx, deltaY: dy,
@@ -388,7 +384,6 @@ final class MiddleScrollService {
         target = nil
         cancelValidationWork()
         gesture.reset()
-        remainder = ScrollVelocity(x: 0, y: 0)
         hideIndicator()
         stopTimer()
         removeTapIfIdle()

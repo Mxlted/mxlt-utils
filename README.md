@@ -46,6 +46,8 @@
 - **Keep familiar controls.** Short middle clicks are preserved when the original target is still available. Normal wheel and trackpad scrolling stay unchanged.
 - **Choose where it works.** Exclude apps that use middle-drag for their own tools. Blender is excluded by default.
 
+**New in source builds:** optional smooth scrolling eases speed changes while keeping stops immediate. The v0.1.0 download uses direct speed changes.
+
 ### Only what you enable
 
 Each feature has its own switch. Use either one or both, pause everything from the menu bar, and optionally launch at login. Turning a feature off stops its monitoring and keeps your settings for next time.

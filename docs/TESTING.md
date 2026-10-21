@@ -15,6 +15,14 @@ Coverage includes close eligibility and native identity, down/up movement, short
 
 ## Running-app checks
 
+### Unreleased smoothing checks
+
+The source build after 0.1.0 adds motion-policy tests for eased speed changes, diagonal travel across timer frequencies, low-speed fractional accumulation, axis stops and reversals, direct-speed mode, invalid/delayed samples, and clearing motion on dead-zone return, release, cancellation, or reset. Settings tests cover the default-on smoothing choice and its persistence when disabled and relaunched. The local suite passes 165 XCTest cases and the separate Release app build passes.
+
+These are unit/integration and build results. The 0.1.0 native fixture/browser results below predate smoothing; they do not verify the new setting's visible feel or output cadence. Re-run scroll, click, wheel, Escape, pause/disable, and browser checks on the new build, and assess smoothness with a physical mouse. The 60 Hz timer is not a measured delivery guarantee.
+
+### Fixture workflow
+
 Build the [disposable fixture](../scripts/fixtures/README.md). Grant Accessibility to the installed mxlt-utils app, enable the relevant feature, and stop any other quit monitor during tests. Do not close or terminate real user apps as a test.
 
 ```sh

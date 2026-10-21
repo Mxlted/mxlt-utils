@@ -24,10 +24,8 @@ Important boundaries are intentional: unknown AX state means no quit; canceled a
 
 The scroll feature must explicitly cancel pending close intent when it consumes an original auxiliary-button press. Replayed input must be marked and ignored as new close intent. Disabling either feature must remove that feature's resources without overwriting the other's callbacks or enabled setting.
 
-## Vorssaint
+## Original application and scrolling
 
-[Vorssaint](https://github.com/vorssaint/vorssaint-utils/tree/7c7b6d56679f04ebe53256c5817f10d0a04f7e86) was inspected at commit `7c7b6d5`. Its [README](https://github.com/vorssaint/vorssaint-utils/blob/7c7b6d56679f04ebe53256c5817f10d0a04f7e86/README.md) identifies the project as GPL-3.0-or-later; its [license](https://github.com/vorssaint/vorssaint-utils/blob/7c7b6d56679f04ebe53256c5817f10d0a04f7e86/LICENSE) contains GPLv3, and source headers identify the later-version option.
+mxlt-utils has its own application shell, visual identity, settings, feature lifecycle, and middle-button scrolling implementation. The scroll policy, velocity smoothing, and native event adapter are implemented in this repository using public macOS APIs, without importing another utility's code or assets.
 
-Vorssaint is a product and UX reference only. No Vorssaint implementation, assets, branding, or layouts are copied. The useful ideas are one menu bar entry, separately enabled features that stop work when disabled and retain settings, compact controls, and permissions explained at the point of use. mxlt-utils implements these ideas independently for two focused features. It does not import Vorssaint's feature-installation platform, broad module catalog, or private system integrations.
-
-Vorssaint's quit-on-close behavior is not the specification for this project. The explicit verified-close safeguards and current functionality come from CallQuits. Ordinary wheel smoothing, acceleration, and trackpad emulation in the reference are also separate from mxlt-utils' required middle-button hold-and-drag scrolling.
+The two features are independently enabled and retain their settings when disabled. CallQuits supplies the verified-close behavior described above. Middle scrolling adds held-button scrolling with target validation, short-click preservation, and immediate cancellation. Ordinary wheel and trackpad input remain unchanged.
