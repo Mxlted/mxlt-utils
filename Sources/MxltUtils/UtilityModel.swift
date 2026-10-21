@@ -151,6 +151,7 @@ final class UtilityModel: ObservableObject {
 
     func retry() {
         scrollFailed = false
+        scrollService.stop()
         scrollConfiguration = nil
         quit.retryMonitoring()
         reconcile()

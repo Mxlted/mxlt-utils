@@ -199,6 +199,15 @@ final class QuitModelTests: XCTestCase {
         }
     }
 
+    func testTapControlNotificationsSurviveStaleSyntheticMetadata() throws {
+        let source = try XCTUnwrap(CGEventSource(stateID: .privateState))
+        source.userData = CloseMonitorInput.syntheticEventMarker
+        let event = try XCTUnwrap(CGEvent(source: source))
+        XCTAssertTrue(CloseMonitorInput.shouldIgnore(.leftMouseDown, event: event))
+        XCTAssertFalse(CloseMonitorInput.shouldIgnore(.tapDisabledByTimeout, event: event))
+        XCTAssertFalse(CloseMonitorInput.shouldIgnore(.tapDisabledByUserInput, event: event))
+    }
+
     func testTimeoutRecoveryIsBoundedAndRespectsDisabledOrUntrustedState() {
         var recovery = TapRecovery()
         XCTAssertFalse(recovery.shouldRetry(enabled: false, trusted: true), "intentional pause")

@@ -13,23 +13,62 @@ enum MiddleScrollEventRouting {
         return source
     }
 
-    static func replayEvent(_ original: CGEvent, processID: pid_t, windowID: CGWindowID,
+    static func replayEvent(_ original: CGEvent, template: CGEvent, processID: pid_t, windowID: CGWindowID,
                             anchor: ScrollPoint) -> CGEvent? {
         guard original.type == .otherMouseDown || original.type == .otherMouseUp,
               original.getIntegerValueField(.mouseEventButtonNumber) == 2,
-              let source = source(),
-              let event = CGEvent(mouseEventSource: source, mouseType: original.type,
-                                  mouseCursorPosition: CGPoint(x: anchor.x, y: anchor.y), mouseButton: .center) else { return nil }
-        event.flags = original.flags
+              template.type == .otherMouseDown,
+              template.getIntegerValueField(.mouseEventButtonNumber) == 2,
+              template.location == CGPoint(x: anchor.x, y: anchor.y),
+              let source = source(), let event = template.copy() else { return nil }
+        // Both halves use down's WindowServer context: a release near a window edge can carry
+        // another window's native context even though the pointer remains inside the dead zone.
+        // Preserve each half's time/modifiers/button semantics without borrowing that recipient.
+        event.type = original.type
+        event.setSource(source)
         event.timestamp = original.timestamp
-        event.setIntegerValueField(.mouseEventClickState, value: original.getIntegerValueField(.mouseEventClickState))
+        event.flags = original.flags
+        for field in [CGEventField.mouseEventClickState, .mouseEventNumber] {
+            event.setIntegerValueField(field, value: original.getIntegerValueField(field))
+        }
         event.setDoubleValueField(.mouseEventPressure, value: original.getDoubleValueField(.mouseEventPressure))
         stamp(event, processID: processID, windowID: windowID, anchor: anchor)
         return event
     }
 
+    static func scrollEvent(template: CGEvent, deltaX: Int32, deltaY: Int32, processID: pid_t,
+                            windowID: CGWindowID, anchor: ScrollPoint, timestamp: CGEventTimestamp) -> CGEvent? {
+        guard template.type == .otherMouseDown,
+              template.location == CGPoint(x: anchor.x, y: anchor.y),
+              let source = source(), let event = template.copy(),
+              let values = CGEvent(scrollWheelEvent2Source: source, units: .pixel, wheelCount: 2,
+                                   wheel1: deltaY, wheel2: deltaX, wheel3: 0) else { return nil }
+        // Retain WindowServer/AppKit routing from the original captured down. A fresh CGEvent's
+        // under-pointer fields alone do not establish the recipient's native window context.
+        event.type = .scrollWheel
+        event.setSource(source)
+        let integerFields: [CGEventField] = [
+            .scrollWheelEventDeltaAxis1, .scrollWheelEventDeltaAxis2, .scrollWheelEventDeltaAxis3,
+            .scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2, .scrollWheelEventPointDeltaAxis3,
+            .scrollWheelEventScrollCount, .scrollWheelEventInstantMouser
+        ]
+        for field in integerFields { event.setIntegerValueField(field, value: values.getIntegerValueField(field)) }
+        for field in [CGEventField.scrollWheelEventFixedPtDeltaAxis1, .scrollWheelEventFixedPtDeltaAxis2,
+                      .scrollWheelEventFixedPtDeltaAxis3] {
+            event.setDoubleValueField(field, value: values.getDoubleValueField(field))
+        }
+        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: 0)
+        event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: 0)
+        event.timestamp = timestamp
+        event.flags = []
+        stamp(event, processID: processID, windowID: windowID, anchor: anchor)
+        return event
+    }
+
     static func stamp(_ event: CGEvent, processID: pid_t, windowID: CGWindowID, anchor: ScrollPoint) {
-        event.location = CGPoint(x: anchor.x, y: anchor.y)
+        // The template already contains the anchor in its native recipient context. Reassigning
+        // global location here can rewrite local transport coordinates for a foreign NSWindow.
         event.setIntegerValueField(.eventSourceUserData, value: syntheticTag)
         event.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(processID))
         event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(windowID))

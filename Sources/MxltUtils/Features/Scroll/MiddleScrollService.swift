@@ -23,7 +23,7 @@ final class MiddleScrollService {
     private var sequence: MiddleScrollSequence?
     private var target: MiddleScrollTarget?
     private var generation: UInt64 = 0
-    private var validationPending = false
+    private var validationWork: DispatchWorkItem?
     private var lastTick = ProcessInfo.processInfo.systemUptime
     private var missingReleaseSince: TimeInterval?
     private var remainder = ScrollVelocity(x: 0, y: 0)
@@ -32,6 +32,8 @@ final class MiddleScrollService {
     private var indicatorVisible = false
 #if DEBUG
     private static var debugMessageCount = 0
+    private var debugEmissionReported = false
+    private var debugStaleValidationReported = false
 #endif
 
     private func debugLog(_ message: String) {
@@ -49,7 +51,7 @@ final class MiddleScrollService {
         self.settings = settings
         self.exclusions = Set(exclusions.map { $0.lowercased() })
         refreshEligibleProcesses()
-        cancel()
+        cancel(reason: "restart")
         enabled = true
         retryUsed = false
         guard AXIsProcessTrusted() else { debugLog("start denied trust"); enabled = false; removeTapIfIdle(); return false }
@@ -87,7 +89,7 @@ final class MiddleScrollService {
 
     func stop() {
         enabled = false
-        cancel()
+        cancel(reason: "stop")
         removeObservers()
         // If down was suppressed, consume its matching up before releasing the tap.
         // No synthetic down has been sent, so permission loss cannot leave a held synthetic button.
@@ -95,8 +97,13 @@ final class MiddleScrollService {
     }
 
     func cancel() {
+        cancel(reason: "lifecycle")
+    }
+
+    private func cancel(reason: String) {
+        if sequence != nil, gesture.phase != .cancelled { debugLog("cancel: \(reason)") }
         generation &+= 1
-        validationPending = false
+        cancelValidationWork()
         target = nil
         hideIndicator()
         remainder = ScrollVelocity(x: 0, y: 0)
@@ -111,7 +118,7 @@ final class MiddleScrollService {
 
     private func handle(_ type: CGEventType, event: CGEvent) -> Bool {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            cancel()
+            cancel(reason: "tap disabled")
             if type == .tapDisabledByTimeout, !retryUsed, AXIsProcessTrusted(), let tap {
                 retryUsed = true
                 CGEvent.tapEnable(tap: tap, enable: true)
@@ -126,7 +133,7 @@ final class MiddleScrollService {
         }
         guard event.getIntegerValueField(.eventSourceUserData) != Self.syntheticEventTag else { return false }
         if type == .flagsChanged {
-            cancel()
+            cancel(reason: "modifier changed")
             return false
         }
         if type == .keyDown {
@@ -135,23 +142,25 @@ final class MiddleScrollService {
                 // A cancelled held middle sequence can coexist with a later close gesture.
                 // Its swallowed Escape must still cancel CallQuits' newer pending intent.
                 onAuxiliaryPress?()
-                cancel()
+                cancel(reason: "Escape")
                 return true
             }
-            cancel() // Also invalidates a short click queued for replay.
+            cancel(reason: "key press") // Also invalidates a short click queued for replay.
             return false
         }
         if type == .leftMouseDown || type == .rightMouseDown {
-            cancel()
+            cancel(reason: "other mouse press")
             return false
         }
         if type == .otherMouseDown {
             onAuxiliaryPress?() // Must run before suppression, independently of target validation.
+            // Even an excluded or otherwise uncaptured press supersedes an older queued click.
+            if sequence == nil { generation &+= 1; cancelValidationWork() }
         }
         let middle = event.getIntegerValueField(.mouseEventButtonNumber) == 2
-        if type == .otherMouseDown, !middle { cancel(); return false }
+        if type == .otherMouseDown, !middle { cancel(reason: "auxiliary press"); return false }
         if type == .otherMouseDown, middle {
-            guard sequence == nil else { cancel(); return true }
+            guard sequence == nil else { cancel(reason: "duplicate middle down"); return true }
             guard enabled else { debugLog("down bypass: disabled"); return false }
             guard event.flags.intersection([.maskShift, .maskControl, .maskAlternate, .maskCommand]).isEmpty
             else { debugLog("down bypass: modifiers"); return false }
@@ -162,6 +171,10 @@ final class MiddleScrollService {
             guard gesture.begin(at: sequence.anchor, timestamp: sequence.timestamp, settings: settings)
             else { debugLog("down bypass: invalid gesture"); return false }
             debugLog("down captured")
+#if DEBUG
+            debugEmissionReported = false
+            debugStaleValidationReported = false
+#endif
             self.sequence = sequence
             missingReleaseSince = nil
             target = nil
@@ -193,7 +206,7 @@ final class MiddleScrollService {
             let token = generation
             self.sequence = nil
             target = nil
-            validationPending = false
+            cancelValidationWork()
             gesture.reset()
             if disposition == .replayClick, let release {
                 // Revalidate at replay time. Never post a delayed click into a changed target.
@@ -202,18 +215,21 @@ final class MiddleScrollService {
                     guard token == self.generation, self.enabled else { self.debugLog("replay cancelled before validation"); return }
                     let resolved = pinnedTarget ?? MiddleScrollTarget(sequence: sequence, exclusions: self.exclusions)
                     guard let resolved, resolved.applicationIsValid else { self.debugLog("replay target unavailable"); return }
-                    self.worker.async { [weak self] in
+                    let work = DispatchWorkItem { [weak self] in
                         let valid = resolved.windowIsValid()
                         DispatchQueue.main.async {
                             guard let self else { return }
-                            guard valid else { self.debugLog("replay window validation failed"); return }
                             guard token == self.generation, self.enabled else { self.debugLog("replay superseded"); return }
+                            self.validationWork = nil
+                            guard valid else { self.debugLog("replay window validation failed"); return }
                             guard ProcessInfo.processInfo.systemUptime - timestamp <= 0.25 else { self.debugLog("replay expired"); return }
                             guard resolved.applicationIsValid else { self.debugLog("replay app invalid"); return }
                             self.debugLog("replay validated")
                             self.replay(down: sequence.down, up: release, target: resolved)
                         }
                     }
+                    self.validationWork = work
+                    self.worker.async(execute: work)
                 }
             }
             removeTapIfIdle()
@@ -224,6 +240,7 @@ final class MiddleScrollService {
 
     private func updatePointer(_ point: CGPoint) {
         guard gesture.move(to: ScrollPoint(x: point.x, y: point.y)), let sequence else { return }
+        debugLog("gesture activated")
         let token = generation
         DispatchQueue.main.async { [weak self] in
             guard let self, token == self.generation, self.gesture.phase == .scrolling else { return }
@@ -236,7 +253,7 @@ final class MiddleScrollService {
         guard let target = MiddleScrollTarget(sequence: sequence, exclusions: exclusions) else {
             // A vanished/ambiguous target cannot safely receive either half of the gesture.
             debugLog("target preparation failed")
-            cancel()
+            cancel(reason: "target unavailable")
             return
         }
         debugLog("target prepared")
@@ -260,7 +277,7 @@ final class MiddleScrollService {
         guard sequence != nil else { stopTimer(); return }
         guard AXIsProcessTrusted() else {
             enabled = false
-            cancel()
+            cancel(reason: "permission lost")
             removeObservers()
             removeTap()
             finishSequence()
@@ -273,8 +290,13 @@ final class MiddleScrollService {
         guard CGEventSource.buttonState(.combinedSessionState, button: .center) else {
             // HID state can change before the queued up reaches this run loop. Stop scrolling
             // immediately, but give that matching up a short drain interval before teardown.
-            if let since = missingReleaseSince, now - since >= 0.2 { finishSequence() }
-            else if missingReleaseSince == nil { missingReleaseSince = now }
+            if let since = missingReleaseSince, now - since >= 0.2 {
+                debugLog("missing button state: drain finished")
+                finishSequence()
+            } else if missingReleaseSince == nil {
+                debugLog("missing button state: drain started")
+                missingReleaseSince = now
+            }
             return
         }
         missingReleaseSince = nil
@@ -285,25 +307,44 @@ final class MiddleScrollService {
     }
 
     private func validateAndScroll(generation token: UInt64, elapsed: TimeInterval) {
-        guard !validationPending, let target, target.applicationIsValid else {
-            if target != nil, !target!.applicationIsValid { cancel() }
+        guard validationWork == nil, let target, target.applicationIsValid else {
+            if target != nil, !target!.applicationIsValid { cancel(reason: "target app invalid") }
             return
         }
-        validationPending = true
         let requestedAt = ProcessInfo.processInfo.systemUptime
-        worker.async { [weak self] in
+        let work = DispatchWorkItem { [weak self] in
             let valid = target.windowIsValid()
             DispatchQueue.main.async {
                 guard let self, token == self.generation else { return }
-                self.validationPending = false
-                guard valid, target.applicationIsValid else { self.debugLog("active window validation failed"); self.cancel(); return }
+                self.validationWork = nil
+                guard valid, target.applicationIsValid else { self.debugLog("active window validation failed"); self.cancel(reason: "target window invalid"); return }
                 guard self.enabled, self.gesture.phase == .scrolling, elapsed > 0,
-                      ProcessInfo.processInfo.systemUptime - requestedAt < 0.1 else { return }
+                      self.missingReleaseSince == nil,
+                      CGEventSource.buttonState(.combinedSessionState, button: .center),
+                      AXIsProcessTrusted() else { return }
+                guard ProcessInfo.processInfo.systemUptime - requestedAt < 0.1 else {
+#if DEBUG
+                    if !self.debugStaleValidationReported {
+                        self.debugStaleValidationReported = true
+                        self.debugLog("scroll skipped: stale validation")
+                    }
+#endif
+                    return
+                }
                 // Velocity is re-read so returning to the dead zone takes effect before posting.
                 let current = self.gesture.velocity
                 self.postScroll(velocity: current, elapsed: elapsed, target: target)
             }
         }
+        validationWork = work
+        worker.async(execute: work)
+    }
+
+    private func cancelValidationWork() {
+        // Cancelled queued jobs never begin AX work. A job already executing keeps its timeout,
+        // and generation checks reject its result. Rapid gestures cannot accumulate stale probes.
+        validationWork?.cancel()
+        validationWork = nil
     }
 
     private func postScroll(velocity: ScrollVelocity, elapsed: TimeInterval, target: MiddleScrollTarget) {
@@ -312,32 +353,32 @@ final class MiddleScrollService {
         let dx = Int32(x.rounded(.towardZero))
         let dy = Int32(y.rounded(.towardZero))
         remainder = ScrollVelocity(x: x - Double(dx), y: y - Double(dy))
-        guard dx != 0 || dy != 0,
-              let source = MiddleScrollEventRouting.source(),
-              let event = CGEvent(scrollWheelEvent2Source: source, units: .pixel, wheelCount: 2,
-                                  wheel1: dy, wheel2: dx, wheel3: 0) else { return }
-        stamp(event, target: target)
-        event.flags = []
-        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
-        event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: 0)
-        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: 0)
+        guard dx != 0 || dy != 0 else { return }
+        guard let template = sequence?.down,
+              let event = MiddleScrollEventRouting.scrollEvent(template: template, deltaX: dx, deltaY: dy,
+                                                               processID: target.processID, windowID: target.windowID,
+                                                               anchor: target.anchor,
+                                                               timestamp: UInt64(ProcessInfo.processInfo.systemUptime * 1_000_000_000)) else {
+#if DEBUG
+            if !debugEmissionReported { debugEmissionReported = true; debugLog("scroll construction failed") }
+#endif
+            return
+        }
         event.postToPid(target.processID)
+#if DEBUG
+        if !debugEmissionReported { debugEmissionReported = true; debugLog("scroll posted") }
+#endif
     }
 
     private func replay(down: CGEvent, up: CGEvent, target: MiddleScrollTarget) {
-        guard let down = MiddleScrollEventRouting.replayEvent(down, processID: target.processID,
+        guard let replayedDown = MiddleScrollEventRouting.replayEvent(down, template: down, processID: target.processID,
                                                             windowID: target.windowID, anchor: target.anchor),
-              let up = MiddleScrollEventRouting.replayEvent(up, processID: target.processID,
+              let replayedUp = MiddleScrollEventRouting.replayEvent(up, template: down, processID: target.processID,
                                                           windowID: target.windowID, anchor: target.anchor) else { return }
         // Posting both in the same run-loop turn preserves pairing; never send down while waiting.
-        down.postToPid(target.processID)
-        up.postToPid(target.processID)
+        replayedDown.postToPid(target.processID)
+        replayedUp.postToPid(target.processID)
         debugLog("replay pair posted")
-    }
-
-    private func stamp(_ event: CGEvent, target: MiddleScrollTarget) {
-        MiddleScrollEventRouting.stamp(event, processID: target.processID,
-                                       windowID: target.windowID, anchor: target.anchor)
     }
 
     private func finishSequence() {
@@ -345,7 +386,7 @@ final class MiddleScrollService {
         sequence = nil
         missingReleaseSince = nil
         target = nil
-        validationPending = false
+        cancelValidationWork()
         gesture.reset()
         remainder = ScrollVelocity(x: 0, y: 0)
         hideIndicator()
@@ -374,7 +415,7 @@ final class MiddleScrollService {
         guard observers.isEmpty else { return }
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                                 object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.cancel() }
+            MainActor.assumeIsolated { self?.cancel(reason: "display change") }
         }
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification,
                      NSWorkspace.didActivateApplicationNotification] {
@@ -385,7 +426,7 @@ final class MiddleScrollService {
         for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification,
                      NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.activeSpaceDidChangeNotification] {
             observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.cancel() }
+                MainActor.assumeIsolated { self?.cancel(reason: "session change") }
             })
         }
     }
@@ -517,6 +558,7 @@ private final class MiddleScrollIndicator {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
+        panel.animationBehavior = .none
         panel.ignoresMouseEvents = true
         panel.setAccessibilityElement(false)
         panel.level = .floating

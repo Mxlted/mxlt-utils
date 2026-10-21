@@ -78,7 +78,7 @@ final class MiddleScrollRoutingTests: XCTestCase {
         let nativeSource = try XCTUnwrap(CGEventSource(stateID: .privateState))
         nativeSource.userData = 17
         let down = try XCTUnwrap(CGEvent(mouseEventSource: nativeSource, mouseType: .otherMouseDown,
-                                        mouseCursorPosition: CGPoint(x: 4, y: 5), mouseButton: .center))
+                                        mouseCursorPosition: CGPoint(x: anchor.x, y: anchor.y), mouseButton: .center))
         let up = try XCTUnwrap(CGEvent(mouseEventSource: nativeSource, mouseType: .otherMouseUp,
                                       mouseCursorPosition: CGPoint(x: 7, y: 9), mouseButton: .center))
         down.flags = .maskShift
@@ -86,7 +86,7 @@ final class MiddleScrollRoutingTests: XCTestCase {
         down.setIntegerValueField(.mouseEventClickState, value: 2)
         up.setIntegerValueField(.mouseEventClickState, value: 2)
         for native in [down, up] {
-            let event = try XCTUnwrap(MiddleScrollEventRouting.replayEvent(native, processID: 42, windowID: 7, anchor: anchor))
+            let event = try XCTUnwrap(MiddleScrollEventRouting.replayEvent(native, template: down, processID: 42, windowID: 7, anchor: anchor))
             XCTAssertEqual(native.getIntegerValueField(.eventSourceUserData), 17, "native input remains untouched")
             XCTAssertEqual(event.type, native.type)
             XCTAssertEqual(event.location, CGPoint(x: -300, y: 200))
@@ -100,4 +100,62 @@ final class MiddleScrollRoutingTests: XCTestCase {
         XCTAssertEqual(down.type, .otherMouseDown)
         XCTAssertEqual(up.type, .otherMouseUp)
     }
+
+    func testNativeWindowContextSurvivesPairedReplayAndScrollConversion() throws {
+        let native = try XCTUnwrap(NSEvent.mouseEvent(with: .otherMouseDown, location: CGPoint(x: 80, y: 90),
+                                                    modifierFlags: .control, timestamp: 123,
+                                                    windowNumber: 999, context: nil, eventNumber: 3,
+                                                    clickCount: 1, pressure: 1)?.cgEvent)
+        native.setIntegerValueField(.mouseEventButtonNumber, value: 2)
+        let originalSource = try XCTUnwrap(CGEventSource(stateID: .privateState))
+        originalSource.userData = 17
+        native.setSource(originalSource)
+        let nativeAnchor = ScrollPoint(x: native.location.x, y: native.location.y)
+        let replay = try XCTUnwrap(MiddleScrollEventRouting.replayEvent(native, template: native, processID: 42, windowID: 7, anchor: nativeAnchor))
+        XCTAssertEqual(NSEvent(cgEvent: replay)?.windowNumber, 999, "recipient window context differs from under-pointer metadata")
+        XCTAssertEqual(NSEvent(cgEvent: replay)?.locationInWindow, NSEvent(cgEvent: native)?.locationInWindow)
+        let scroll = try XCTUnwrap(MiddleScrollEventRouting.scrollEvent(template: native, deltaX: 7, deltaY: -12,
+                                                                       processID: 42, windowID: 7, anchor: nativeAnchor,
+                                                                       timestamp: 987_000_000))
+        let appKitScroll = try XCTUnwrap(NSEvent(cgEvent: scroll))
+        XCTAssertEqual(appKitScroll.windowNumber, 999)
+        XCTAssertEqual(appKitScroll.locationInWindow, NSEvent(cgEvent: native)?.locationInWindow)
+        XCTAssertEqual(scroll.location, native.location)
+        XCTAssertEqual(appKitScroll.type, .scrollWheel)
+        XCTAssertTrue(appKitScroll.hasPreciseScrollingDeltas)
+        XCTAssertEqual(appKitScroll.scrollingDeltaX, 7)
+        XCTAssertEqual(appKitScroll.scrollingDeltaY, -12)
+        XCTAssertEqual(scroll.flags, [])
+        XCTAssertEqual(scroll.timestamp, 987_000_000)
+        XCTAssertEqual(scroll.getIntegerValueField(.scrollWheelEventMomentumPhase), 0)
+        XCTAssertEqual(scroll.getIntegerValueField(.eventSourceUserData), 0x4D584C54)
+        XCTAssertEqual(native.type, .otherMouseDown)
+        XCTAssertEqual(native.getIntegerValueField(.eventSourceUserData), 17)
+        XCTAssertEqual(NSEvent(cgEvent: native)?.windowNumber, 999)
+    }
+
+    func testReleaseAcrossWindowEdgeRetainsDownRecipientAndReleaseSemantics() throws {
+        let down = try XCTUnwrap(NSEvent.mouseEvent(with: .otherMouseDown, location: CGPoint(x: 80, y: 90),
+                                                  modifierFlags: [], timestamp: 123, windowNumber: 999,
+                                                  context: nil, eventNumber: 3, clickCount: 1, pressure: 1)?.cgEvent)
+        let up = try XCTUnwrap(NSEvent.mouseEvent(with: .otherMouseUp, location: CGPoint(x: 83, y: 90),
+                                                modifierFlags: .shift, timestamp: 123.1, windowNumber: 888,
+                                                context: nil, eventNumber: 4, clickCount: 1, pressure: 0)?.cgEvent)
+        down.setIntegerValueField(.mouseEventButtonNumber, value: 2)
+        up.setIntegerValueField(.mouseEventButtonNumber, value: 2)
+        let nativeAnchor = ScrollPoint(x: down.location.x, y: down.location.y)
+        let replay = try XCTUnwrap(MiddleScrollEventRouting.replayEvent(up, template: down, processID: 42,
+                                                                       windowID: 7, anchor: nativeAnchor))
+        XCTAssertEqual(NSEvent(cgEvent: replay)?.windowNumber, 999)
+        XCTAssertEqual(NSEvent(cgEvent: up)?.windowNumber, 888, "original release stays untouched")
+        XCTAssertEqual(replay.type, .otherMouseUp)
+        XCTAssertEqual(replay.timestamp, up.timestamp)
+        XCTAssertEqual(replay.flags, up.flags)
+        XCTAssertEqual(replay.getIntegerValueField(.mouseEventNumber), up.getIntegerValueField(.mouseEventNumber))
+        XCTAssertEqual(replay.getDoubleValueField(.mouseEventPressure), 0)
+        XCTAssertEqual(replay.location, down.location)
+        XCTAssertNil(MiddleScrollEventRouting.replayEvent(up, template: down, processID: 42,
+                                                        windowID: 7, anchor: ScrollPoint(x: nativeAnchor.x + 1, y: nativeAnchor.y)))
+    }
+
 }

@@ -31,6 +31,9 @@ enum CloseMonitorInput {
     static func isSynthetic(_ event: CGEvent) -> Bool {
         event.getIntegerValueField(.eventSourceUserData) == syntheticEventMarker
     }
+    static func shouldIgnore(_ type: CGEventType, event: CGEvent) -> Bool {
+        type != .tapDisabledByTimeout && type != .tapDisabledByUserInput && isSynthetic(event)
+    }
 }
 
 /// Observes clicks; never swallows, rewrites, or synthesizes a user's input.
@@ -132,7 +135,7 @@ final class CloseMonitor {
         // Read the original annotated mouse event instead. A listen-only tap cannot modify input.
         eventMonitor = CGEvent.tapCreate(tap: .cgAnnotatedSessionEventTap, place: .tailAppendEventTap,
                                         options: .listenOnly, eventsOfInterest: CloseMonitorInput.eventMask, callback: { _, type, event, context in
-            guard let context, !CloseMonitorInput.isSynthetic(event) else { return Unmanaged.passUnretained(event) }
+            guard let context, !CloseMonitorInput.shouldIgnore(type, event: event) else { return Unmanaged.passUnretained(event) }
             let monitor = Unmanaged<CloseMonitor>.fromOpaque(context).takeUnretainedValue()
             MainActor.assumeIsolated {
                 if type == .tapDisabledByUserInput {
