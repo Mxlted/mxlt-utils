@@ -1,52 +1,146 @@
-<p align="center"><img src="Resources/AppIcon.png" width="112" alt="mxlt-utils icon"></p>
+<p align="center">
+  <img src="Resources/AppIcon.png" width="112" alt="mxlt-utils icon">
+</p>
+
 <h1 align="center">mxlt-utils</h1>
-<p align="center">A small native macOS menu bar app with useful features you choose.</p>
+
+<p align="center"><strong>Small tools. Your way.</strong></p>
+<p align="center">Quit apps when you're done. Hold the mouse wheel to scroll.<br>A native macOS menu bar utility by <a href="https://github.com/Mxlted">Mxlted</a>.</p>
+
+<p align="center">
+  <a href="https://github.com/Mxlted/mxlt-utils/releases"><img src="https://img.shields.io/github/v/release/Mxlted/mxlt-utils?include_prereleases&amp;label=release&amp;color=3aab91" alt="Latest release, including previews"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-555555?logo=apple&amp;logoColor=white" alt="macOS 14 or later">
+  <img src="https://img.shields.io/badge/Apple_silicon-arm64-555555" alt="Apple silicon builds">
+  <a href="https://github.com/Mxlted/mxlt-utils/actions/workflows/ci.yml"><img src="https://github.com/Mxlted/mxlt-utils/actions/workflows/ci.yml/badge.svg?branch=main" alt="Build and test status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3aab91" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Mxlted/mxlt-utils/releases/download/v0.1.0/mxlt-utils-0.1.0-macos-arm64.dmg"><strong>Download for Mac</strong></a> ·
+  <a href="#features">Features</a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="https://github.com/Mxlted/mxlt-utils/releases">Release notes</a> ·
+  <a href="https://github.com/Mxlted/mxlt-utils/issues/new/choose">Report an issue</a>
+</p>
+
+<p align="center">
+  <img src="docs/images/settings.png" width="640" alt="mxlt-utils settings in dark appearance, with independent CallQuits and Middle scrolling switches, Accessibility status, and an optional launch-at-login setting">
+</p>
 
 ## Features
 
-**CallQuits** requests a normal quit after a verified close action closes an app's last eligible window. It supports the red close button, Command-W, and supported native tab-close buttons. Optional any-window behavior applies only to the red button. Save prompts, remaining or replacement windows, exclusions, and uncertain Accessibility results prevent quitting. Shift-click force quit is separately opt-in, off by default, and warns about unsaved work.
+### Close the window. Quit the app.
 
-**Middle scrolling** lets you hold the mouse wheel and move away from the press point to scroll vertically, horizontally, or diagonally. Distance controls speed, including while the pointer rests. Return to the dead zone to stop; release or press Escape to cancel. Short middle clicks are preserved when the original target can still be verified. Sensitivity, dead zone, direction, and per-app exceptions are adjustable.
+**CallQuits** quits an app after you close its last window, so finished apps don't linger in the Dock. Use the red close button, or enable support for **⌘W** and supported native tab-close buttons.
 
-Each feature has its own switch and keeps its settings while disabled. Pause all features from the menu bar. Launch at login is optional. There are no accounts, telemetry, third-party runtime dependencies, or automatic downloads.
+- **Keep the apps you need.** Choose exceptions for music, messaging, terminals, and anything else you want running.
+- **Respect unfinished work.** Save prompts, canceled closes, and replacement windows prevent automatic quitting. If window state is unclear, the app stays open.
+- **Choose your close behavior.** Last-window quitting is the default. An optional setting lets the red button quit after closing any window.
 
-## Install
+### Hold. Move. Scroll.
 
-Get the DMG from [GitHub Releases](https://github.com/Mxlted/mxlt-utils/releases), open it, and drag **mxlt-utils** into **Applications**. Launch that copy and enable the features you want. Both start disabled. Public release assets are a Developer ID signed, notarized DMG and `SHA256SUMS.txt`; a draft is not a published release.
+**Middle scrolling** turns a held mouse wheel into continuous scrolling. Move away from where you pressed to scroll vertically, horizontally, or diagonally. Move farther to go faster.
 
-Requires macOS 14 or later. Initial downloadable builds target Apple silicon (`arm64`). The deployment target is not a claim of runtime testing on every macOS version. See [testing and compatibility](docs/TESTING.md) for the actual evidence and remaining checks.
+- **Stop naturally.** Return to the center to pause; release the button or press Escape to finish.
+- **Make it comfortable.** Adjust sensitivity, the center dead zone, and scroll direction.
+- **Keep familiar controls.** Short middle clicks are preserved when the original target is still available. Normal wheel and trackpad scrolling stay unchanged.
+- **Choose where it works.** Exclude apps that use middle-drag for their own tools. Blender is excluded by default.
 
-## Permissions and privacy
+### Only what you enable
 
-Enable Accessibility in **System Settings → Privacy & Security → Accessibility** when a feature asks for it. CallQuits inspects close controls and window state; middle scrolling observes the held button and generates scroll events. The Settings window shows permission and feature status and links directly to the correct page. Existing CallQuits permission, preferences, and login settings do not transfer.
+Each feature has its own switch. Use either one or both, pause everything from the menu bar, and optionally launch at login. Turning a feature off stops its monitoring and keeps your settings for next time.
 
-Diagnostics are bounded, session-only state changes and verified close results. They do not store document names or contents, keystrokes, or raw input streams. The app makes no application network requests; the Releases link opens your browser only when clicked.
+## Getting started
 
-## Behavior and limits
+**Requires macOS 14 Sonoma or later and an Apple silicon Mac.** A mouse with a clickable wheel or middle button is needed for middle scrolling.
 
-- CallQuits requires explicit, verified close intent. It never quits an app merely because its window count reaches zero. Tabs and Command-W always use last-window graceful behavior.
-- Minimized and other-Space windows are counted when Accessibility exposes them. Unreadable state fails closed. Apps with incomplete or unusual Accessibility trees may not support every close method.
-- Finder, system processes, and mxlt-utils are always protected. Music, Spotify, Mail, Messages, FaceTime, Terminal, and iTerm start as editable quit exceptions. Discord retains the narrow verified hide-on-close handling from CallQuits.
-- Middle scrolling stays bound to the original app, window, and press location. A moved, covered, hidden, closed, or otherwise unverifiable target cancels the gesture. The anchor chooses the nested scroll view; moving across windows does not retarget it.
-- A short stationary middle press (up to half a second) is replayed as a paired click only after target validation. Longer stationary holds and canceled gestures are consumed. Middle-drag tools should be added to scrolling exceptions; Blender is excluded by default.
-- Ordinary wheel and trackpad input are unchanged. Apps may apply their own axis locking. Secure input, unusual event frameworks, remote desktops, and other input remappers can limit compatibility. Physical mouse and multi-display coverage are listed separately in the testing guide.
+1. [Download the DMG](https://github.com/Mxlted/mxlt-utils/releases/download/v0.1.0/mxlt-utils-0.1.0-macos-arm64.dmg).
+2. Open it and drag **mxlt-utils** into **Applications**.
+3. Launch **mxlt-utils** and turn on the features you want. Both start off.
+4. When prompted, allow **mxlt-utils** in **System Settings → Privacy & Security → Accessibility**, then return to the app and click **Check again**.
 
-## Troubleshooting
+The app and DMG are Developer ID signed and notarized. Download checksums are included with each release.
 
-If a feature is inactive, check its switch, global pause, and Accessibility status. After granting access, use **Check again**; if permission is granted but monitoring failed, use **Retry monitoring**. A timeout gets one automatic recovery attempt, followed by an explicit retry if needed. After replacing a development build, macOS may require removing a stale Accessibility entry, adding the Applications copy again, and relaunching.
+> [!NOTE]
+> **v0.1.0 is the first preview.** App compatibility and hardware coverage are still growing. See [tested environments and known limits](docs/TESTING.md#compatibility-evidence) before relying on a particular setup. Updates are downloaded manually from [Releases](https://github.com/Mxlted/mxlt-utils/releases).
 
-Avoid running the standalone CallQuits monitor at the same time as mxlt-utils' CallQuits feature. You can keep standalone CallQuits installed and use only middle scrolling here. No migration changes the original app's settings.
+## Privacy & permissions
 
-If an app uses middle-drag for its own tools, add it to **Middle scrolling → Leave middle-drag unchanged**. For close behavior, add an app under **CallQuits → Keep these apps running**.
+**No account. No telemetry. No application network requests.** Everything the app does stays on your Mac. Opening the Releases link launches your browser only when you click it.
 
-## Development
+Accessibility lets CallQuits check close buttons and windows, and lets middle scrolling respond to the held mouse button. Access is requested when a feature needs it. The Activity view keeps a small, temporary history of status changes; it does not record document names, document contents, keystrokes, or raw input.
+
+## Questions & troubleshooting
+
+<details>
+<summary><strong>A feature isn't working. What should I check?</strong></summary>
+
+Check that the feature is enabled, **Pause all features** is off, and Accessibility access is allowed. Click **Check again** after granting access. If access is allowed but monitoring hasn't started, click **Retry monitoring**.
+
+After replacing a development build, you may need to remove the old Accessibility entry, add the copy in Applications, and relaunch. Avoid running another quit monitor alongside CallQuits or another scroll remapper while troubleshooting middle scrolling.
+
+</details>
+
+<details>
+<summary><strong>How do I keep a particular app running or preserve its middle-drag controls?</strong></summary>
+
+Add it under **CallQuits → Keep these apps running** or **Middle scrolling → Leave middle-drag unchanged**. Music, Spotify, Mail, Messages, FaceTime, Terminal, and iTerm start as editable quit exceptions. Finder, system processes, and mxlt-utils are always protected.
+
+</details>
+
+<details>
+<summary><strong>What should I know about close behavior?</strong></summary>
+
+CallQuits requires a supported, verified close action. It never quits an app just because no windows are visible. Minimized windows and windows on other Spaces count when macOS makes them available to Accessibility; unreadable state prevents quitting. Apps with unusual window controls may not support every close method.
+
+**⌘W and tab-close buttons always require the last window to close and request a normal quit.** A remaining tab or window keeps the app running. Discord has a narrowly scoped exception for its verified hide-on-close behavior.
+
+Shift-click force quit is a separate, optional setting, off by default. It applies only to the red close button and can discard unsaved work.
+
+</details>
+
+<details>
+<summary><strong>How do middle clicks and scrolling behave?</strong></summary>
+
+Scrolling stays with the app, window, and starting point where you pressed, including the scrollable area under that point. Moving across windows doesn't redirect it. If the original target moves, becomes covered or hidden, closes, or can no longer be verified, the gesture is canceled.
+
+A short, stationary press of up to half a second is delivered as a paired middle click only when the original target can still be verified. Longer stationary holds and canceled gestures do not produce clicks. Some apps limit scrolling to one axis. Secure input, remote desktops, and other input tools can affect compatibility.
+
+Physical mouse, multi-display, and wider app coverage remain preview limitations. See the [testing guide](docs/TESTING.md) for exactly what has been checked.
+
+</details>
+
+<details>
+<summary><strong>Can I use this alongside standalone CallQuits?</strong></summary>
+
+Yes, if you use only middle scrolling in mxlt-utils. Run only one CallQuits monitor at a time. Each app has its own preferences, Accessibility permission, and launch-at-login setting; nothing is migrated automatically.
+
+</details>
+
+## Build & contribute
+
+Built with **Swift, SwiftUI, and AppKit**, with no third-party runtime dependencies. Use **Xcode 16.4 or newer**; open `Package.swift` to work in Xcode.
 
 ```sh
+git clone https://github.com/Mxlted/mxlt-utils.git
+cd mxlt-utils
 swift test
 ./scripts/build.sh
 open build/mxlt-utils.app
 ```
 
-The Swift package is the project source of truth. Xcode can open `Package.swift`; the bundle script produces the menu bar application. See [development](docs/DEVELOPMENT.md), [architecture](docs/ARCHITECTURE.md), [testing](docs/TESTING.md), and [releasing](docs/RELEASING.md).
+The build script creates a locally signed development app. For the notarized download, use [Releases](https://github.com/Mxlted/mxlt-utils/releases).
 
-MIT licensed. The CallQuits core and native close integration are adapted from [CallQuits](https://github.com/Mxlted/CallQuits), with its notice retained. [Vorssaint](https://github.com/vorssaint/vorssaint-utils) inspired the independently enabled utility concept; no GPL code or assets are included. See [provenance](docs/PROVENANCE.md).
+Bug reports, focused improvements, and documentation fixes are welcome. Start with the [contributing guide](CONTRIBUTING.md).
+
+| Guide | What you'll find |
+| --- | --- |
+| [Development](docs/DEVELOPMENT.md) | Toolchain, local builds, and project workflow |
+| [Architecture](docs/ARCHITECTURE.md) | App structure, native services, and shared policies |
+| [Testing](docs/TESTING.md) | Automated checks, native fixtures, and compatibility evidence |
+| [Scrolling](docs/SCROLLING.md) | Gesture behavior and input handling |
+| [Releasing](docs/RELEASING.md) | Signing, notarization, and packaging |
+
+## License
+
+[MIT](LICENSE) © 2026 Mxlted and contributors. CallQuits components are adapted from [CallQuits](https://github.com/Mxlted/CallQuits), with their copyright and permission notice retained. See [source provenance](docs/PROVENANCE.md) for implementation history.

@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a problem with CallQuits, middle scrolling, or the app.
+body:
+  - type: markdown
+    attributes:
+      value: Please check existing issues and the README troubleshooting notes first. Remove private information from screenshots and logs.
+  - type: dropdown
+    id: feature
+    attributes:
+      label: Which part of the app?
+      options:
+        - CallQuits
+        - Middle scrolling
+        - Settings, permissions, or launch at login
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: App and macOS versions
+      placeholder: mxlt-utils 0.1.0, macOS version, Mac model
+    validations:
+      required: true
+  - type: input
+    id: affected-app
+    attributes:
+      label: Affected app and version
+      description: If the problem occurs in a particular app, name it here.
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: What did you do, what happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Relevant settings and setup
+      description: Include feature settings, Accessibility status, mouse model for scrolling issues, and any other quit or input utilities running.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Optional screenshots or brief diagnostics with private information removed. Do not include document contents or keystrokes.
