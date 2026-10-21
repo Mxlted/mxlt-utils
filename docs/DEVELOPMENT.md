@@ -12,7 +12,7 @@ open build/mxlt-utils.app
 
 The script places caches in `.build/` and disables SwiftPM's build sandbox for the local bundle route; it does not disable macOS application protections. Xcode/SwiftPM output, test evidence, fixtures, and release artifacts remain ignored. Never commit credentials or signing material.
 
-Regenerate the original geometric icon with `./scripts/generate-icon.sh`. The committed `.icns` and PNG make normal builds independent of icon generation. The menu bar uses a native template symbol and supports light/dark appearance.
+Regenerate the Fold icon representations from `Resources/AppIcon-source.png` with `./scripts/generate-icon.sh`. The generator uses explicit bitmap dimensions for every standard and Retina size, preserving the approved artwork and transparency. The committed `.icns` and PNG make normal builds independent of icon generation. The menu bar uses a native template symbol and supports light/dark appearance.
 
 ## Workflow
 

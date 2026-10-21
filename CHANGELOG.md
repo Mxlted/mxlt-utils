@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
+- Introduce the Fold app icon with a mint geometric mark on charcoal.
 - Extend middle scroll speed to 10× with a continuous slider free of crowded tick marks. Smooth scrolling uses its default response.
 - Align smooth middle scrolling with the anchor display's refresh rate, including high-refresh displays.
 - Keep scroll speed steadier when target validation skips a frame, with bounded travel after delays and immediate stops.

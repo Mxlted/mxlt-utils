@@ -37,7 +37,7 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Button(model.paused ? "Resume features" : "Pause all features") { model.paused.toggle() }
                     .frame(maxWidth: .infinity)
-                Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.0")")
+                Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.3.0")")
                     .font(.caption2).foregroundStyle(.tertiary)
             }.padding(16).frame(width: 190).background(.bar)
             Divider()
