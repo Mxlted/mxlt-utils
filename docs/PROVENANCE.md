@@ -29,3 +29,17 @@ The scroll feature must explicitly cancel pending close intent when it consumes 
 mxlt-utils has its own application shell, visual identity, settings, feature lifecycle, and middle-button scrolling implementation. The scroll policy, velocity smoothing, and native event adapter are implemented in this repository using public macOS APIs, without importing another utility's code or assets.
 
 The two features are independently enabled and retain their settings when disabled. CallQuits supplies the verified-close behavior described above. Middle scrolling adds held-button scrolling with target validation, short-click preservation, and immediate cancellation. Ordinary wheel and trackpad input remain unchanged.
+
+## Accessibility entry deletion research
+
+The October 21, 2026 follow-up distinguishes turning Accessibility off from deleting an enabled entry while the app is running. The earlier trust-only watchdog did not cover a stale `AXIsProcessTrusted()` result. These references informed an original implementation; no source or assets were imported and no dependency was added.
+
+| Reference | Relevant behavior and limits |
+| --- | --- |
+| [Deskflow issue 9562](https://github.com/deskflow/deskflow/issues/9562) and [fix 9579](https://github.com/deskflow/deskflow/pull/9579) | Reports frozen local input after deleting the enabled Accessibility entry. The fix polls trust, disables interception and requests process exit on loss. Its trust check alone does not establish protection against a stale positive result. |
+| [Mos Interceptor.swift](https://github.com/Caldis/Mos/blob/8a2fd112e2af444c37ca5f65f42e9bd19c08a5c2/Mos/Utils/Interceptor.swift) | Checks trust around start/recovery, limits repeated restarts, and explicitly disables/invalidates taps on destruction. It does not supply a fresh filtering-capability probe for row deletion. |
+| [vorssaint-utils](https://github.com/vorssaint/vorssaint-utils/tree/1235843ab1746974ed5c3c74f0cdb06a4c8fb923) | The supplied read-only checkout polls trust, explicitly invalidates scroll taps, and suspends interceptors before its own permission reset. This does not establish detection of external deletion with stale trust. Its GPL source remains separate. |
+| [axwatch 0.1.0 documentation](https://docs.rs/axwatch/0.1.0/axwatch/) | Reports that row deletion can leave trust true and recommends a fresh filtering-tap probe. Its permission notification names are undocumented; mxlt-utils does not depend on them. |
+| [Apple CGEvent.tapCreate documentation](https://developer.apple.com/documentation/coregraphics/cgevent/tapcreate(tap:place:options:eventsofinterest:callback:userinfo:)) | Unauthorized event bits are removed; an empty mask fails creation. A keyboard-only filtering probe avoids accepting a mouse-only tap after keyboard bits are stripped. Context7 and the installed Apple SDK headers were also consulted. |
+
+mxlt-utils now checks both trust and filtering capability before starting and from its existing background watchdog. The temporary probe uses public APIs, immediately disables and invalidates its port, and installs no run-loop source or synthetic input. A failed check detaches the existing filter and prevents recovery until a new successful check. Timeout recovery also checks capability off the input callback. This is a response to the reported failure mode, not evidence that every macOS version reliably reports revocation or releases input within a guaranteed interval. Real deletion/regrant behavior and probe overhead still require manual validation.

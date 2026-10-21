@@ -9,6 +9,7 @@ final class MiddleScrollService {
     static let syntheticEventTag = MiddleScrollEventRouting.syntheticTag
     var onAuxiliaryPress: (() -> Void)?
     var onFailure: (() -> Void)?
+    private(set) var inputAccessUnavailable = false
 
     private var tap: CFMachPort?
     private var permissionWatchdog: InputTapPermissionWatchdog?
@@ -56,7 +57,13 @@ final class MiddleScrollService {
         cancel(reason: "restart")
         enabled = true
         retryUsed = false
-        guard AXIsProcessTrusted() else { debugLog("start denied trust"); stopImmediately(); return false }
+        guard InputTapPermissionProbe.check() else {
+            inputAccessUnavailable = true
+            debugLog("start denied input access")
+            stopImmediately()
+            return false
+        }
+        inputAccessUnavailable = false
         if let tap, permissionWatchdog?.allowsInput == true, CGEvent.tapIsEnabled(tap: tap) {
             installObservers()
             return true
@@ -78,7 +85,7 @@ final class MiddleScrollService {
             return consume ? nil : Unmanaged.passUnretained(event)
         }, userInfo: Unmanaged.passUnretained(self).toOpaque())
         if let tap {
-            let watchdog = InputTapPermissionWatchdog(readPermission: { AXIsProcessTrusted() }, detach: {
+            let watchdog = InputTapPermissionWatchdog(readPermission: { InputTapPermissionProbe.check() }, detach: {
                 CGEvent.tapEnable(tap: tap, enable: false)
                 CFMachPortInvalidate(tap)
             }, onRevoked: { [weak self] in
@@ -130,6 +137,7 @@ final class MiddleScrollService {
 
     private func permissionLost() {
         let wasActive = tap != nil || enabled || sequence != nil
+        inputAccessUnavailable = true
         stopImmediately()
         if wasActive { onFailure?() }
     }
@@ -161,12 +169,23 @@ final class MiddleScrollService {
         guard permissionWatchdog?.allowsInput == true else { return false }
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             cancel(reason: "tap disabled")
-            if type == .tapDisabledByTimeout, enabled, !retryUsed, AXIsProcessTrusted(), let tap {
+            if type == .tapDisabledByTimeout, enabled, !retryUsed, let tap, let watchdog = permissionWatchdog {
                 retryUsed = true
-                if permissionWatchdog?.performIfAllowed({
-                    CGEvent.tapEnable(tap: tap, enable: true)
-                    return CGEvent.tapIsEnabled(tap: tap)
-                }) == true { return false }
+                watchdog.checkBeforeRecovery { [weak self] allowed in
+                    DispatchQueue.main.async {
+                        guard let self, self.enabled, self.permissionWatchdog === watchdog else { return }
+                        guard allowed else { self.permissionLost(); return }
+                        guard watchdog.performIfAllowed({
+                            CGEvent.tapEnable(tap: tap, enable: true)
+                            return CGEvent.tapIsEnabled(tap: tap)
+                        }) else {
+                            if watchdog.wasRevoked { self.permissionLost() }
+                            else { self.stopImmediately(); self.onFailure?() }
+                            return
+                        }
+                    }
+                }
+                return false
             }
             stopImmediately()
             onFailure?()

@@ -4,6 +4,7 @@ import Foundation
 /// detach operation must only disable/invalidate the native tap, never call AppKit.
 final class InputTapPermissionWatchdog: @unchecked Sendable {
     private let lock = NSLock()
+    private let queue = DispatchQueue(label: "com.mxlted.mxlt-utils.input-permission", qos: .userInteractive)
     private let readPermission: () -> Bool
     private let detach: () -> Void
     private let onRevoked: () -> Void
@@ -31,7 +32,6 @@ final class InputTapPermissionWatchdog: @unchecked Sendable {
     func start() {
         lock.lock(); defer { lock.unlock() }
         guard active, timer == nil else { return }
-        let queue = DispatchQueue(label: "com.mxlted.mxlt-utils.input-permission", qos: .userInteractive)
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: .milliseconds(250), leeway: .milliseconds(25))
         timer.setEventHandler { [weak self] in self?.checkPermission() }
@@ -44,6 +44,15 @@ final class InputTapPermissionWatchdog: @unchecked Sendable {
     func checkPermission() {
         guard allowsInput, !readPermission() else { return }
         if finish(revoked: true) { onRevoked() }
+    }
+
+    /// Timeout recovery needs fresh capability evidence, without doing permission
+    /// IPC inside an input callback. Use the same serial queue as periodic checks.
+    func checkBeforeRecovery(_ completion: @escaping (Bool) -> Void) {
+        queue.async { [self] in
+            checkPermission()
+            completion(allowsInput)
+        }
     }
 
     /// Serialize enabling/posting with revocation. Keep this operation short; never

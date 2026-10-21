@@ -3,6 +3,76 @@ import XCTest
 @testable import MxltUtils
 
 final class InputTapPermissionWatchdogTests: XCTestCase {
+    func testDeletedAccessibilityRowOverridesStaleTrustAndRequiresFreshWatcher() {
+        var canFilter = true
+        var actions: [String] = []
+        let readPermission = {
+            InputTapPermissionProbe.check(readTrust: { true }, verifyFiltering: { canFilter })
+        }
+        let watchdog = InputTapPermissionWatchdog(readPermission: readPermission,
+                                                  detach: { actions.append("detach") },
+                                                  onRevoked: { actions.append("notify") })
+        watchdog.checkPermission()
+        XCTAssertTrue(watchdog.allowsInput)
+        // Deleting the enabled row can leave AX trust true while creation is denied.
+        canFilter = false
+        watchdog.checkPermission()
+        XCTAssertFalse(watchdog.allowsInput)
+        XCTAssertTrue(watchdog.wasRevoked)
+        XCTAssertEqual(actions, ["detach", "notify"])
+        canFilter = true
+        watchdog.checkPermission()
+        XCTAssertFalse(watchdog.performIfAllowed { XCTFail("No old gesture or tap may resume"); return true })
+        let replacement = InputTapPermissionWatchdog(readPermission: readPermission, detach: {}, onRevoked: {})
+        replacement.checkPermission()
+        XCTAssertTrue(replacement.allowsInput)
+    }
+
+    func testDeniedTrustDoesNotCreateProbeAndTrustAloneCannotGrantAccess() {
+        XCTAssertFalse(InputTapPermissionProbe.check(readTrust: { false }, verifyFiltering: {
+            XCTFail("Do not attempt a filtering tap when Accessibility is already denied")
+            return true
+        }))
+        XCTAssertFalse(InputTapPermissionProbe.check(readTrust: { true }, verifyFiltering: { false }))
+        XCTAssertTrue(InputTapPermissionProbe.check(readTrust: { true }, verifyFiltering: { true }))
+    }
+
+    func testTimeoutRecoveryProbesOffCallbackAndRejectsStaleTrust() {
+        let complete = DispatchSemaphore(value: 0)
+        var actions: [String] = []
+        let watchdog = InputTapPermissionWatchdog(readPermission: {
+            XCTAssertFalse(Thread.isMainThread)
+            return InputTapPermissionProbe.check(readTrust: { true }, verifyFiltering: { false })
+        }, detach: { actions.append("detach") }, onRevoked: { actions.append("notify") })
+        watchdog.checkBeforeRecovery { allowed in
+            XCTAssertFalse(allowed)
+            XCTAssertFalse(watchdog.performIfAllowed { XCTFail("No re-enable after failed probe"); return true })
+            actions.append("recovery rejected")
+            complete.signal()
+        }
+        XCTAssertEqual(complete.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(actions, ["detach", "notify", "recovery rejected"])
+    }
+
+    func testSuccessfulRecoveryProbeCannotReviveTapStoppedDuringQuery() {
+        let entered = DispatchSemaphore(value: 0)
+        let finishRead = DispatchSemaphore(value: 0)
+        let complete = DispatchSemaphore(value: 0)
+        let watchdog = InputTapPermissionWatchdog(readPermission: {
+            entered.signal()
+            _ = finishRead.wait(timeout: .now() + 2)
+            return true
+        }, detach: {}, onRevoked: { XCTFail("Explicit stop is not revocation") })
+        watchdog.checkBeforeRecovery { allowed in
+            XCTAssertFalse(allowed)
+            complete.signal()
+        }
+        XCTAssertEqual(entered.wait(timeout: .now() + 2), .success)
+        watchdog.invalidate()
+        finishRead.signal()
+        XCTAssertEqual(complete.wait(timeout: .now() + 2), .success)
+    }
+
     func testRevocationDetachesBeforeNotificationAndCannotResumeOnRegrant() {
         var granted = true
         var actions: [String] = []

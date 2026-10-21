@@ -74,10 +74,15 @@ private struct GeneralPane: View {
         }
         GroupBox {
             VStack(alignment: .leading, spacing: 9) {
-                Label(quit.accessibilityGranted ? "Accessibility allowed" : "Accessibility access", systemImage: quit.accessibilityGranted ? "checkmark.shield" : "hand.raised")
+                Label(quit.accessibilityGranted && !model.inputAccessNeedsRetry ? "Accessibility allowed" : "Accessibility access",
+                      systemImage: quit.accessibilityGranted && !model.inputAccessNeedsRetry ? "checkmark.shield" : "hand.raised")
                     .font(.headline)
                 Text("CallQuits checks close controls and windows. Middle scrolling turns a held mouse button into scrolling. Your input stays on this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
+                if model.inputAccessNeedsRetry {
+                    Text("Input access is unavailable. Restore Accessibility access in System Settings, then retry monitoring.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 HStack {
                     if !quit.accessibilityGranted && (quit.enabled || scroll.enabled) {
                         Button("Allow access…") { quit.requestAccessibility() }

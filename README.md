@@ -92,7 +92,7 @@ After replacing a development build, you may need to remove the old Accessibilit
 
 Quit mxlt-utils to release its input monitoring. If its menu is inaccessible, use Activity Monitor to quit it, or Force Quit it if needed. If the keyboard still works, you can open Terminal and run `pkill -x MxltUtils` to stop the utility. Restore Accessibility access before reopening it if you want to use its features.
 
-The current development build adds automatic cleanup when access is removed, including while the app is busy. This change is not included in the published 0.3.0 release and still needs real-device revocation testing.
+The current development build checks whether input access still works when an enabled Accessibility entry is deleted; macOS can continue reporting it as allowed. It detaches monitoring when that check fails. Restore access, then click **Retry monitoring**. This change is not included in the published 0.3.0 release and still needs real-device deletion and revocation testing.
 
 </details>
 

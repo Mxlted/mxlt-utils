@@ -93,6 +93,11 @@ final class UtilityModel: ObservableObject {
     private var scrollFailed = false
     private var lastPermission = false
 
+    var inputAccessNeedsRetry: Bool { scroll.enabled && scrollService.inputAccessUnavailable }
+    private var scrollFailureStatus: String {
+        inputAccessNeedsRetry ? "Input access unavailable — retry" : "Monitoring unavailable — retry"
+    }
+
     private struct ScrollConfiguration: Equatable {
         let sensitivity: Double
         let deadZone: Double
@@ -119,8 +124,10 @@ final class UtilityModel: ObservableObject {
             self.quit.refreshPermission()
             self.scrollConfiguration = nil
             self.scrollFailed = self.quit.accessibilityGranted
-            self.setScrollStatus(self.scrollFailed ? "Monitoring unavailable — retry" : "Accessibility access needed")
-            if self.scrollFailed { self.quit.record("Middle scrolling stopped. Retry monitoring in Settings.") }
+            self.setScrollStatus(self.scrollFailed ? self.scrollFailureStatus : "Accessibility access needed")
+            if self.inputAccessNeedsRetry {
+                self.quit.record("Middle scrolling stopped because input access is unavailable. Restore Accessibility access, then retry monitoring.")
+            } else if self.scrollFailed { self.quit.record("Middle scrolling stopped. Retry monitoring in Settings.") }
         }
         let center = NSWorkspace.shared.notificationCenter
         let suspensionNotifications: [(Notification.Name, SessionSuspension.Reason, Bool)] = [
@@ -160,7 +167,7 @@ final class UtilityModel: ObservableObject {
 
     func retry() {
         scrollFailed = false
-        scrollService.stop()
+        scrollService.stopImmediately()
         scrollConfiguration = nil
         quit.retryMonitoring()
         reconcile()
@@ -197,13 +204,13 @@ final class UtilityModel: ObservableObject {
                 scrollConfiguration = configuration
                 scrollFailed = !scrollService.start(settings: scroll.settings, exclusions: configuration.exclusions)
             }
-            setScrollStatus(scrollFailed ? "Monitoring unavailable — retry" : "Ready — hold the mouse wheel")
+            setScrollStatus(scrollFailed ? scrollFailureStatus : "Ready — hold the mouse wheel")
         } else {
             if !quit.accessibilityGranted {
                 scrollService.stopImmediately()
                 scrollConfiguration = nil
             } else if scrollConfiguration != nil { scrollService.stop(); scrollConfiguration = nil }
-            setScrollStatus(!scroll.enabled ? "Off" : suspended ? "Paused" : !quit.accessibilityGranted ? "Accessibility access needed" : "Monitoring unavailable — retry")
+            setScrollStatus(!scroll.enabled ? "Off" : suspended ? "Paused" : !quit.accessibilityGranted ? "Accessibility access needed" : scrollFailureStatus)
         }
     }
     private func setScrollStatus(_ value: String) { if scroll.status != value { scroll.status = value } }
