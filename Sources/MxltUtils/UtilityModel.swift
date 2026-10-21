@@ -116,9 +116,11 @@ final class UtilityModel: ObservableObject {
         scrollService.onAuxiliaryPress = { [weak self] in self?.quitMonitor.cancelForAuxiliaryInput() }
         scrollService.onFailure = { [weak self] in
             guard let self else { return }
-            self.scrollFailed = true
-            self.scroll.status = "Monitoring unavailable — retry"
-            self.quit.record("Middle scrolling stopped. Retry monitoring in Settings.")
+            self.quit.refreshPermission()
+            self.scrollConfiguration = nil
+            self.scrollFailed = self.quit.accessibilityGranted
+            self.setScrollStatus(self.scrollFailed ? "Monitoring unavailable — retry" : "Accessibility access needed")
+            if self.scrollFailed { self.quit.record("Middle scrolling stopped. Retry monitoring in Settings.") }
         }
         let center = NSWorkspace.shared.notificationCenter
         let suspensionNotifications: [(Notification.Name, SessionSuspension.Reason, Bool)] = [
@@ -167,9 +169,12 @@ final class UtilityModel: ObservableObject {
     private func reconcile() {
         guard started else { return }
         if (quit.enabled || scroll.enabled) && permissionTimer == nil {
-            permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.quit.refreshPermission(); self?.reconcile() }
             }
+            timer.tolerance = 0.05
+            permissionTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
         } else if !quit.enabled && !scroll.enabled {
             permissionTimer?.invalidate(); permissionTimer = nil
         }
@@ -194,7 +199,10 @@ final class UtilityModel: ObservableObject {
             }
             setScrollStatus(scrollFailed ? "Monitoring unavailable — retry" : "Ready — hold the mouse wheel")
         } else {
-            if scrollConfiguration != nil { scrollService.stop(); scrollConfiguration = nil }
+            if !quit.accessibilityGranted {
+                scrollService.stopImmediately()
+                scrollConfiguration = nil
+            } else if scrollConfiguration != nil { scrollService.stop(); scrollConfiguration = nil }
             setScrollStatus(!scroll.enabled ? "Off" : suspended ? "Paused" : !quit.accessibilityGranted ? "Accessibility access needed" : "Monitoring unavailable — retry")
         }
     }
@@ -203,7 +211,7 @@ final class UtilityModel: ObservableObject {
     func stop() {
         started = false
         quitMonitor.stop(); quitStarted = false
-        scrollService.stop(); scrollConfiguration = nil
+        scrollService.stopImmediately(); scrollConfiguration = nil
         permissionTimer?.invalidate(); permissionTimer = nil
         subscriptions.removeAll()
         workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }; workspaceObservers.removeAll()

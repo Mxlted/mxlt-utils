@@ -11,6 +11,7 @@ final class MiddleScrollService {
     var onFailure: (() -> Void)?
 
     private var tap: CFMachPort?
+    private var permissionWatchdog: InputTapPermissionWatchdog?
     private var source: CFRunLoopSource?
     private var timer: Timer?
     private var displayLink: CADisplayLink?
@@ -55,8 +56,8 @@ final class MiddleScrollService {
         cancel(reason: "restart")
         enabled = true
         retryUsed = false
-        guard AXIsProcessTrusted() else { debugLog("start denied trust"); enabled = false; removeTapIfIdle(); return false }
-        if let tap, CGEvent.tapIsEnabled(tap: tap) {
+        guard AXIsProcessTrusted() else { debugLog("start denied trust"); stopImmediately(); return false }
+        if let tap, permissionWatchdog?.allowsInput == true, CGEvent.tapIsEnabled(tap: tap) {
             installObservers()
             return true
         }
@@ -68,19 +69,37 @@ final class MiddleScrollService {
                                options: .defaultTap, eventsOfInterest: mask, callback: { _, type, event, context in
             guard let context else { return Unmanaged.passUnretained(event) }
             let service = Unmanaged<MiddleScrollService>.fromOpaque(context).takeUnretainedValue()
-            let consume = MainActor.assumeIsolated { service.handle(type, event: event) }
+            let consume = MainActor.assumeIsolated {
+                let watchdog = service.permissionWatchdog
+                // Normal drain completion removes the tap while consuming its paired up.
+                // Revocation instead fails open, including when it races this callback.
+                return service.handle(type, event: event) && watchdog?.wasRevoked == false
+            }
             return consume ? nil : Unmanaged.passUnretained(event)
         }, userInfo: Unmanaged.passUnretained(self).toOpaque())
         if let tap {
+            let watchdog = InputTapPermissionWatchdog(readPermission: { AXIsProcessTrusted() }, detach: {
+                CGEvent.tapEnable(tap: tap, enable: false)
+                CFMachPortInvalidate(tap)
+            }, onRevoked: { [weak self] in
+                DispatchQueue.main.async {
+                    guard let self, self.permissionWatchdog?.allowsInput == false else { return }
+                    self.permissionLost()
+                }
+            })
+            permissionWatchdog = watchdog
             source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
             if let source {
                 CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-                CGEvent.tapEnable(tap: tap, enable: true)
+                watchdog.performIfAllowed {
+                    CGEvent.tapEnable(tap: tap, enable: true)
+                    return CGEvent.tapIsEnabled(tap: tap)
+                }
             }
+            watchdog.start()
         }
-        guard let tap, source != nil, CGEvent.tapIsEnabled(tap: tap) else {
-            enabled = false
-            removeTap()
+        guard let tap, source != nil, permissionWatchdog?.allowsInput == true, CGEvent.tapIsEnabled(tap: tap) else {
+            stopImmediately()
             return false
         }
         installObservers()
@@ -89,12 +108,30 @@ final class MiddleScrollService {
     }
 
     func stop() {
+        guard AXIsProcessTrusted(), permissionWatchdog?.allowsInput != false else {
+            stopImmediately()
+            return
+        }
         enabled = false
         cancel(reason: "stop")
         removeObservers()
         // If down was suppressed, consume its matching up before releasing the tap.
         // No synthetic down has been sent, so permission loss cannot leave a held synthetic button.
         removeTapIfIdle()
+    }
+
+    /// Revocation and process shutdown must never wait for another input event.
+    func stopImmediately() {
+        enabled = false
+        removeTap()
+        finishSequence()
+        removeObservers()
+    }
+
+    private func permissionLost() {
+        let wasActive = tap != nil || enabled || sequence != nil
+        stopImmediately()
+        if wasActive { onFailure?() }
     }
 
     func cancel() {
@@ -119,17 +156,19 @@ final class MiddleScrollService {
     }
 
     private func handle(_ type: CGEventType, event: CGEvent) -> Bool {
+        // The watchdog can detach from its queue even while this run loop is busy.
+        // Any callback already queued after revocation must pass input through.
+        guard permissionWatchdog?.allowsInput == true else { return false }
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             cancel(reason: "tap disabled")
-            if type == .tapDisabledByTimeout, !retryUsed, AXIsProcessTrusted(), let tap {
+            if type == .tapDisabledByTimeout, enabled, !retryUsed, AXIsProcessTrusted(), let tap {
                 retryUsed = true
-                CGEvent.tapEnable(tap: tap, enable: true)
-                if CGEvent.tapIsEnabled(tap: tap) { return false }
+                if permissionWatchdog?.performIfAllowed({
+                    CGEvent.tapEnable(tap: tap, enable: true)
+                    return CGEvent.tapIsEnabled(tap: tap)
+                }) == true { return false }
             }
-            enabled = false
-            removeObservers()
-            removeTap()
-            finishSequence()
+            stopImmediately()
             onFailure?()
             return false
         }
@@ -314,13 +353,8 @@ final class MiddleScrollService {
 
     private func tick(initialInterval: TimeInterval) {
         guard sequence != nil else { stopTimer(); return }
-        guard AXIsProcessTrusted() else {
-            enabled = false
-            cancel(reason: "permission lost")
-            removeObservers()
-            removeTap()
-            finishSequence()
-            onFailure?()
+        guard permissionWatchdog?.allowsInput == true, AXIsProcessTrusted() else {
+            permissionLost()
             return
         }
         // Recovers from a lost native up, including session transitions. The tap normally handles
@@ -391,6 +425,7 @@ final class MiddleScrollService {
     }
 
     private func postScroll(delta: ScrollDelta, target: MiddleScrollTarget) {
+        guard permissionWatchdog?.allowsInput == true else { permissionLost(); return }
         let dx = -delta.x
         let dy = -delta.y
         guard dx != 0 || dy != 0 else { return }
@@ -404,20 +439,24 @@ final class MiddleScrollService {
 #endif
             return
         }
-        event.postToPid(target.processID)
+        guard permissionWatchdog?.performIfAllowed({ event.postToPid(target.processID); return true }) == true else { return }
 #if DEBUG
         if !debugEmissionReported { debugEmissionReported = true; debugLog("scroll posted") }
 #endif
     }
 
     private func replay(down: CGEvent, up: CGEvent, target: MiddleScrollTarget) {
+        guard permissionWatchdog?.allowsInput == true, AXIsProcessTrusted() else { permissionLost(); return }
         guard let replayedDown = MiddleScrollEventRouting.replayEvent(down, template: down, processID: target.processID,
                                                             windowID: target.windowID, anchor: target.anchor),
               let replayedUp = MiddleScrollEventRouting.replayEvent(up, template: down, processID: target.processID,
                                                           windowID: target.windowID, anchor: target.anchor) else { return }
         // Posting both in the same run-loop turn preserves pairing; never send down while waiting.
-        replayedDown.postToPid(target.processID)
-        replayedUp.postToPid(target.processID)
+        guard permissionWatchdog?.performIfAllowed({
+            replayedDown.postToPid(target.processID)
+            replayedUp.postToPid(target.processID)
+            return true
+        }) == true else { return }
         debugLog("replay pair posted")
     }
 
@@ -435,8 +474,16 @@ final class MiddleScrollService {
 
     private func removeTapIfIdle() { if !enabled && sequence == nil { removeTap() } }
     private func removeTap() {
+        // Disable/invalidate before removing the run-loop source, releasing the
+        // system input path even if UI cleanup is delayed.
+        if let permissionWatchdog {
+            permissionWatchdog.invalidate()
+        } else if let tap, CFMachPortIsValid(tap) {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+        }
+        permissionWatchdog = nil
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
-        if let tap { CFMachPortInvalidate(tap) }
         source = nil
         tap = nil
     }

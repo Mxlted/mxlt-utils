@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Harden Accessibility revocation cleanup: detach the scrolling input filter from a background watchdog, cancel queued work, preserve feature choices, and explicitly allow hardware input during generated events.
 - Make middle scrolling accelerate progressively with distance from the anchor, with finer control nearby and more speed available farther away. Retain the speed slider and immediate stops.
 - Fix middle clicks being discarded in bookmark-folder menus and other elevated app windows while Middle scrolling is enabled. Keep replay pinned to the original window, bounds and level.
 

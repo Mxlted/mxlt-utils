@@ -10,6 +10,12 @@ enum MiddleScrollEventRouting {
         // Core Graphics can retain source-derived userData when a field is assigned later.
         // Set the marker on a private source before constructing every generated event.
         source.userData = syntheticTag
+        // Generated scrolling/replay must never suppress real mouse or keyboard
+        // input, including if permission disappears during event delivery.
+        source.localEventsSuppressionInterval = 0
+        let hardware: CGEventFilterMask = [.permitLocalMouseEvents, .permitLocalKeyboardEvents, .permitSystemDefinedEvents]
+        source.setLocalEventsFilterDuringSuppressionState(hardware, state: .eventSuppressionStateSuppressionInterval)
+        source.setLocalEventsFilterDuringSuppressionState(hardware, state: .eventSuppressionStateRemoteMouseDrag)
         return source
     }
 

@@ -63,6 +63,7 @@ final class QuitModelTests: XCTestCase {
         granted = false
         for _ in 0..<3 { model.refreshPermission() }
         XCTAssertFalse(model.accessibilityGranted)
+        XCTAssertTrue(model.enabled, "Revoking access retains the user's enabled preference")
         XCTAssertEqual(configurationChanges, 2, "one reconfiguration per trust transition")
         XCTAssertEqual(model.activity.map(\.message), [
             "Accessibility access is unavailable.", "Accessibility access granted."

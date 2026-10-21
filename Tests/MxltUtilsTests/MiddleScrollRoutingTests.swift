@@ -7,6 +7,16 @@ final class MiddleScrollRoutingTests: XCTestCase {
     private let bounds = CGRect(x: -500, y: 120, width: 400, height: 300)
     private let anchor = ScrollPoint(x: -300, y: 200)
 
+    func testGeneratedSourceExplicitlyPermitsAllHardwareInput() throws {
+        let source = try XCTUnwrap(MiddleScrollEventRouting.source())
+        XCTAssertEqual(source.localEventsSuppressionInterval, 0)
+        for state in [CGEventSuppressionState.eventSuppressionStateSuppressionInterval, .eventSuppressionStateRemoteMouseDrag] {
+            XCTAssertEqual(source.getLocalEventsFilterDuringSuppressionState(state),
+                           [.permitLocalMouseEvents, .permitLocalKeyboardEvents, .permitSystemDefinedEvents])
+        }
+        XCTAssertEqual(source.userData, MiddleScrollEventRouting.syntheticTag)
+    }
+
     private func window(id: UInt32 = 7, owner: Int32 = 42, frame: CGRect? = nil,
                         layer: Int = 0, alpha: Double = 1) -> [String: Any] {
         [kCGWindowNumber as String: NSNumber(value: id),

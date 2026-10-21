@@ -139,8 +139,11 @@ final class CloseMonitor {
             let monitor = Unmanaged<CloseMonitor>.fromOpaque(context).takeUnretainedValue()
             MainActor.assumeIsolated {
                 if type == .tapDisabledByUserInput {
-                    monitor.model.enabled = false
-                    monitor.model.record("macOS paused click monitoring. Enable CallQuits to resume.")
+                    monitor.monitoringFailed()
+                    monitor.model.refreshPermission()
+                    if monitor.model.accessibilityGranted {
+                        monitor.model.record("macOS stopped click monitoring. Retry monitoring in Settings.")
+                    }
                 } else if type == .tapDisabledByTimeout {
                     monitor.resumeAfterTimeout()
                 } else if type == .keyDown {
@@ -200,9 +203,12 @@ final class CloseMonitor {
     }
 
     private func removeMonitors() {
-        clearShortcutCandidate()
+        if let eventMonitor {
+            CGEvent.tapEnable(tap: eventMonitor, enable: false)
+            CFMachPortInvalidate(eventMonitor)
+        }
         if let eventSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), eventSource, .commonModes) }
-        if let eventMonitor { CFMachPortInvalidate(eventMonitor) }
+        clearShortcutCandidate()
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
         eventMonitor = nil
         eventSource = nil

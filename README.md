@@ -83,7 +83,16 @@ Accessibility lets CallQuits check close buttons and windows, and lets middle sc
 
 Check that the feature is enabled, **Pause all features** is off, and Accessibility access is allowed. Click **Check again** after granting access. If access is allowed but monitoring hasn't started, click **Retry monitoring**.
 
-After replacing a development build, you may need to remove the old Accessibility entry, add the copy in Applications, and relaunch. Avoid running another quit monitor alongside CallQuits or another scroll remapper while troubleshooting middle scrolling.
+After replacing a development build, you may need to remove the old Accessibility entry, add the copy in Applications, and relaunch. **Quit mxlt-utils before removing or replacing its Accessibility entry.** Avoid running another quit monitor alongside CallQuits or another scroll remapper while troubleshooting middle scrolling.
+
+</details>
+
+<details>
+<summary><strong>Mouse input became erratic after removing Accessibility access.</strong></summary>
+
+Quit mxlt-utils to release its input monitoring. If its menu is inaccessible, use Activity Monitor to quit it, or Force Quit it if needed. If the keyboard still works, you can open Terminal and run `pkill -x MxltUtils` to stop the utility. Restore Accessibility access before reopening it if you want to use its features.
+
+The current development build adds automatic cleanup when access is removed, including while the app is busy. This change is not included in the published 0.3.0 release and still needs real-device revocation testing.
 
 </details>
 

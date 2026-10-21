@@ -15,6 +15,12 @@ Coverage includes close eligibility and native identity, down/up movement, short
 
 ## Running-app checks
 
+### Unreleased Accessibility revocation hardening
+
+All 186 XCTest cases pass. Watchdog tests use injected permission checks and detach operations, including revocation without input, detachment while the main thread is deliberately unavailable, explicit shutdown, stale results after replacement, serialized posting/detachment, and refusing to revive a revoked watcher. Native event-source tests verify zero suppression interval and mouse/keyboard/system passthrough in both suppression states without posting events. Existing gesture cancellation, replay, settings and quit-policy tests remain passing. These tests do not prove that macOS detaches a real input tap correctly or that the reported mouse restriction is resolved.
+
+The user retains manual launch and permission testing. Check removing access while idle, during held scrolling, and while a menu is open; verify clicks can still activate other windows and keyboard input still works. Then restore access and check a fresh gesture and retained feature choices. No Accessibility changes, app launches, input injection or physical-device testing were performed for this change. See the README for recovery steps on an older build.
+
 ### Unreleased progressive distance scrolling
 
 The automated suite passes 179 XCTest cases. Tests cover increasing acceleration with distance, fine motion near the dead zone, continued acceleration beyond the former default speed ceiling, slowing when moving closer, monotonic and symmetric speed across slider/dead-zone settings, diagonal direction, extreme-coordinate bounds, and stationary-pointer travel with smoothing on and off. Existing stop, release, replay and cancellation checks remain passing. The separate Release bundle and strict signature verification pass. Manual app launches and mouse testing remain with the user; perceived feel and comparison with Windows have not been live-tested.
