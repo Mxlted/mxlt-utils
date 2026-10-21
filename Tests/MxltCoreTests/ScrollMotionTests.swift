@@ -2,6 +2,31 @@ import XCTest
 @testable import MxltCore
 
 final class ScrollMotionTests: XCTestCase {
+    func testFartherStationaryPointerProducesMoreTravelAndReturningCloserSlows() {
+        for smooth in [false, true] {
+            var gesture = ScrollGesture()
+            gesture.begin(at: ScrollPoint(x: 0, y: 0), timestamp: 1,
+                          settings: ScrollSettings(smooth: smooth))
+            func travel(at distance: Double) -> Int {
+                gesture.move(to: ScrollPoint(x: 0, y: distance))
+                // Let smoothing settle, then measure a second without more pointer events.
+                for _ in 0..<60 { _ = gesture.scrollDelta(elapsed: 1.0 / 60) }
+                return (0..<60).reduce(0) { total, _ in
+                    total + Int(gesture.scrollDelta(elapsed: 1.0 / 60).y)
+                }
+            }
+            let near = travel(at: 58)
+            let far = travel(at: 208)
+            let farther = travel(at: 358)
+            XCTAssertGreaterThan(near, 0)
+            XCTAssertGreaterThan(far, near)
+            XCTAssertGreaterThan(farther, far)
+            XCTAssertEqual(Double(travel(at: 58)), Double(near), accuracy: 1)
+            gesture.move(to: ScrollPoint(x: 0, y: 0))
+            XCTAssertEqual(gesture.scrollDelta(elapsed: 1.0 / 60), .zero)
+        }
+    }
+
     func testMaximumScrollSpeedStillBoundsDelayedOutput() {
         for smooth in [false, true] {
             var gesture = ScrollGesture()

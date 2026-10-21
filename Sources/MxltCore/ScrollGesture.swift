@@ -34,10 +34,6 @@ public struct ScrollSettings: Equatable, Sendable {
     public let reversed: Bool
     public let smooth: Bool
 
-    // Preserve the established speed ceiling for existing settings; the extended
-    // range raises it proportionally, up to 8,000 points per second at 10x.
-    var speedLimit: Double { 2_400 * max(1, sensitivity / 3) }
-
     public init(sensitivity: Double = 1, deadZone: Double = 8, reversed: Bool = false, smooth: Bool = true) {
         self.sensitivity = Self.sanitize(sensitivity, fallback: 1, range: Self.sensitivityRange)
         self.deadZone = Self.sanitize(deadZone, fallback: 8, range: Self.deadZoneRange)
@@ -115,7 +111,12 @@ public struct ScrollGesture: Sendable {
         }
         let activated = phase == .pending
         phase = .scrolling
-        let speed = min(settings.speedLimit, (distance - settings.deadZone) * 8 * settings.sensitivity)
+        // Gentle near the anchor, progressively faster farther away. At 1x, offsets
+        // of 10/100/200 points beyond the dead zone request 44/800/2,400 pt/s.
+        // Sensitivity scales the curve; one shared ceiling leaves room to accelerate
+        // beyond the former 2,400 pt/s limit at ordinary sensitivity settings.
+        let displacement = distance - settings.deadZone
+        let speed = min(Self.maximumSpeed, displacement * (4 + displacement / 25) * settings.sensitivity)
         let direction = settings.reversed ? -1.0 : 1.0
         velocity = ScrollVelocity(x: dx / distance * speed * direction,
                                   y: dy / distance * speed * direction)

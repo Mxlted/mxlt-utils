@@ -15,6 +15,10 @@ Coverage includes close eligibility and native identity, down/up movement, short
 
 ## Running-app checks
 
+### Unreleased progressive distance scrolling
+
+The automated suite passes 179 XCTest cases. Tests cover increasing acceleration with distance, fine motion near the dead zone, continued acceleration beyond the former default speed ceiling, slowing when moving closer, monotonic and symmetric speed across slider/dead-zone settings, diagonal direction, extreme-coordinate bounds, and stationary-pointer travel with smoothing on and off. Existing stop, release, replay and cancellation checks remain passing. The separate Release bundle and strict signature verification pass. Manual app launches and mouse testing remain with the user; perceived feel and comparison with Windows have not been live-tested.
+
 ### Unreleased bookmark-folder click fix
 
 The automated suite passes 176 XCTest cases. Metadata regression tests cover normal windows, popup/submenu levels and floating/modal panels, plus dismissed, replaced, moved, resized, reowned, transparent or covered menus. Changing the pinned window's level also invalidates it. The separate Release bundle build and strict signature verification pass. These checks exercise target policy and event construction without posting input. They do not establish browser menu delivery.
