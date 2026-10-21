@@ -6,7 +6,7 @@ The Swift package has three production targets:
 - `MxltCore`: deterministic middle-scroll transitions/speed and session suspension policy.
 - `MxltUtils`: SwiftUI/AppKit shell, saved settings, public macOS adapters, and feature lifecycle.
 
-`MxltUtilsApp` owns the menu bar scene and one settings window. `UtilityModel` coordinates the two feature switches, global pause, independent sleep/display/session suspension, and permission refresh. It starts only enabled, trusted features. Settings changes are observed outside input callbacks; the quit adapter retains its own narrow configuration invalidation. A central two-second trust check runs only when at least one feature is enabled. Login status refreshes on app activation/settings use, separately from this timer.
+`MxltUtilsApp` owns the menu bar scene and one settings window. `UtilityModel` coordinates the current feature switches, global pause, independent sleep/display/session suspension, and permission refresh. It starts only enabled, trusted features. Settings changes are observed outside input callbacks; the quit adapter retains its own narrow configuration invalidation. A central two-second trust check runs only when at least one feature is enabled. Login status refreshes on app activation/settings use, separately from this timer.
 
 `QuitModel` retains the tested CallQuits preference and bounded Activity behavior. Its `quit.*` keys live in mxlt-utils' own defaults domain. `ScrollModel` stores validated `scroll.*` settings and exclusions. `Shared/SystemServices.swift` contains native permission and login-item operations. Accessibility access is shared by both features; enabled choices remain independent of temporary suspension.
 

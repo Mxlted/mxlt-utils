@@ -5,7 +5,7 @@
 <h1 align="center">mxlt-utils</h1>
 
 <p align="center"><strong>Small tools. Your way.</strong></p>
-<p align="center">Quit apps when you're done. Hold the mouse wheel to scroll.<br>A native macOS menu bar utility by <a href="https://github.com/Mxlted">Mxlted</a>.</p>
+<p align="center">A growing collection of small, native utilities for your Mac.<br>Built by <a href="https://github.com/Mxlted">Mxlted</a>.</p>
 
 <p align="center">
   <a href="https://github.com/Mxlted/mxlt-utils/releases"><img src="https://img.shields.io/github/v/release/Mxlted/mxlt-utils?include_prereleases&amp;label=release&amp;color=3aab91" alt="Latest release, including previews"></a>
@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Mxlted/mxlt-utils/releases/download/v0.1.0/mxlt-utils-0.1.0-macos-arm64.dmg"><strong>Download for Mac</strong></a> ·
+  <a href="https://github.com/Mxlted/mxlt-utils/releases/download/v0.2.0/mxlt-utils-0.2.0-macos-arm64.dmg"><strong>Download for Mac</strong></a> ·
   <a href="#features">Features</a> ·
   <a href="#getting-started">Getting started</a> ·
   <a href="https://github.com/Mxlted/mxlt-utils/releases">Release notes</a> ·
@@ -27,7 +27,11 @@
   <img src="docs/images/settings.png" width="640" alt="mxlt-utils settings in dark appearance, with independent CallQuits and Middle scrolling switches, Accessibility status, and an optional launch-at-login setting">
 </p>
 
+mxlt-utils brings everyday Mac conveniences together in one menu bar app. It grows as new needs come up, with each utility kept focused, optional, and easy to configure.
+
 ## Features
+
+Available today:
 
 ### Close the window. Quit the app.
 
@@ -42,29 +46,27 @@
 **Middle scrolling** turns a held mouse wheel into continuous scrolling. Move away from where you pressed to scroll vertically, horizontally, or diagonally. Move farther to go faster.
 
 - **Stop naturally.** Return to the center to pause; release the button or press Escape to finish.
-- **Make it comfortable.** Adjust sensitivity, the center dead zone, and scroll direction.
+- **Make it comfortable.** Smooth scrolling eases speed changes while keeping stops immediate. Adjust sensitivity, the center dead zone, and scroll direction, or turn smoothing off for a direct response.
 - **Keep familiar controls.** Short middle clicks are preserved when the original target is still available. Normal wheel and trackpad scrolling stay unchanged.
 - **Choose where it works.** Exclude apps that use middle-drag for their own tools. Blender is excluded by default.
 
-**New in source builds:** optional smooth scrolling eases speed changes while keeping stops immediate. The v0.1.0 download uses direct speed changes.
-
 ### Only what you enable
 
-Each feature has its own switch. Use either one or both, pause everything from the menu bar, and optionally launch at login. Turning a feature off stops its monitoring and keeps your settings for next time.
+Each feature has its own switch. Enable just the tools you need, pause everything from the menu bar, and optionally launch at login. Turning a feature off stops its monitoring and keeps your settings for next time.
 
 ## Getting started
 
 **Requires macOS 14 Sonoma or later and an Apple silicon Mac.** A mouse with a clickable wheel or middle button is needed for middle scrolling.
 
-1. [Download the DMG](https://github.com/Mxlted/mxlt-utils/releases/download/v0.1.0/mxlt-utils-0.1.0-macos-arm64.dmg).
+1. [Download the DMG](https://github.com/Mxlted/mxlt-utils/releases/download/v0.2.0/mxlt-utils-0.2.0-macos-arm64.dmg).
 2. Open it and drag **mxlt-utils** into **Applications**.
-3. Launch **mxlt-utils** and turn on the features you want. Both start off.
+3. Launch **mxlt-utils** and turn on the features you want. Features start off.
 4. When prompted, allow **mxlt-utils** in **System Settings → Privacy & Security → Accessibility**, then return to the app and click **Check again**.
 
 The app and DMG are Developer ID signed and notarized. Download checksums are included with each release.
 
 > [!NOTE]
-> **v0.1.0 is the first preview.** App compatibility and hardware coverage are still growing. See [tested environments and known limits](docs/TESTING.md#compatibility-evidence) before relying on a particular setup. Updates are downloaded manually from [Releases](https://github.com/Mxlted/mxlt-utils/releases).
+> **v0.2.0 is a preview release.** App compatibility and hardware coverage are still growing. See [tested environments and known limits](docs/TESTING.md#compatibility-evidence) before relying on a particular setup. Updates are downloaded manually from [Releases](https://github.com/Mxlted/mxlt-utils/releases).
 
 ## Privacy & permissions
 
@@ -133,7 +135,7 @@ open build/mxlt-utils.app
 
 The build script creates a locally signed development app. For the notarized download, use [Releases](https://github.com/Mxlted/mxlt-utils/releases).
 
-Bug reports, focused improvements, and documentation fixes are welcome. Start with the [contributing guide](CONTRIBUTING.md).
+Have an everyday Mac task that could use a small utility? [Suggest it](https://github.com/Mxlted/mxlt-utils/issues/new/choose). New tools will be added as practical needs arise. Bug reports, focused improvements, and documentation fixes are welcome. Start with the [contributing guide](CONTRIBUTING.md).
 
 | Guide | What you'll find |
 | --- | --- |

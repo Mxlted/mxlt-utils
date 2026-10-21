@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - Add optional smooth middle scrolling, enabled by default, with eased speed changes and a 60 Hz output timer. Dead-zone return, release, and cancellation still stop immediately.
 - Preserve the smoothing preference across feature toggles and relaunches; keep ordinary wheel and trackpad input unchanged.
-- Refresh project documentation.
+- Refresh the README and repository presentation to reflect an expanding collection of independent Mac utilities.
 
 ## 0.1.0
 

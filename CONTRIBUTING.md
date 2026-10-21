@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve mxlt-utils. Bug reports, small fixes, and clearer documentation are all welcome.
+mxlt-utils is a growing collection of native Mac utilities, shaped by everyday needs. Ideas for useful additions, bug reports, small fixes, and clearer documentation are all welcome.
 
 ## Report a bug or suggest an improvement
 

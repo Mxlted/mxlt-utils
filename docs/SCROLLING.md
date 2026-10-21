@@ -4,7 +4,7 @@ Hold the wheel, move beyond the dead zone, and keep the pointer displaced to con
 
 ## Smooth scrolling
 
-Source builds after 0.1.0 include **Smooth scrolling**, enabled by default in Middle scrolling settings. It eases speed changes while the button is held; turning it off gives direct speed changes. This setting is retained across disable/relaunch, and changing it cancels an active gesture before restarting monitoring.
+Version 0.2.0 includes **Smooth scrolling**, enabled by default in Middle scrolling settings. It eases speed changes while the button is held; turning it off gives direct speed changes. This setting is retained across disable/relaunch, and changing it cancels an active gesture before restarting monitoring.
 
 The pure motion policy integrates an exponential velocity response with a 55 ms time constant and retains fractional points for low-speed travel. Each axis stops immediately at zero, and direction reversals discard old-direction velocity and fractional travel. Returning to the dead zone, release, or cancellation clears all motion state. There is no momentum after stopping.
 
