@@ -5,7 +5,7 @@ import ApplicationServices
 enum InputTapPermissionProbe {
     // A mouse-only mask can survive permission stripping. With only keyDown, an
     // unauthorized mask becomes empty and tapCreate must fail (Apple's contract).
-    static let eventMask = CGEventMask(1) << CGEventType.keyDown.rawValue
+    private static let eventMask = CGEventMask(1) << CGEventType.keyDown.rawValue
 
     static func check(readTrust: () -> Bool = { AXIsProcessTrusted() },
                       verifyFiltering: () -> Bool = canCreateFilteringTap) -> Bool {

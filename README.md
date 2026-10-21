@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Mxlted/mxlt-utils/releases/download/v0.3.0/mxlt-utils-0.3.0-macos-arm64.dmg"><strong>Download for Mac</strong></a> ·
+  <a href="https://github.com/Mxlted/mxlt-utils/releases/download/v0.3.5/mxlt-utils-0.3.5-macos-arm64.dmg"><strong>Download for Mac</strong></a> ·
   <a href="#features">Features</a> ·
   <a href="#getting-started">Getting started</a> ·
   <a href="https://github.com/Mxlted/mxlt-utils/releases">Release notes</a> ·
@@ -60,7 +60,7 @@ Each feature has its own switch. Enable just the tools you need, pause everythin
 
 **Requires macOS 14 Sonoma or later and an Apple silicon Mac.** A mouse with a clickable wheel or middle button is needed for middle scrolling.
 
-1. [Download the DMG](https://github.com/Mxlted/mxlt-utils/releases/download/v0.3.0/mxlt-utils-0.3.0-macos-arm64.dmg).
+1. [Download the DMG](https://github.com/Mxlted/mxlt-utils/releases/download/v0.3.5/mxlt-utils-0.3.5-macos-arm64.dmg).
 2. Open it and drag **mxlt-utils** into **Applications**.
 3. Launch **mxlt-utils** and turn on the features you want. Features start off.
 4. When prompted, allow **mxlt-utils** in **System Settings → Privacy & Security → Accessibility**, then return to the app and click **Check again**.
@@ -68,7 +68,7 @@ Each feature has its own switch. Enable just the tools you need, pause everythin
 The app and DMG are Developer ID signed and notarized. Download checksums are included with each release.
 
 > [!NOTE]
-> **v0.3.0 is a preview release.** App compatibility and hardware coverage are still growing. See [tested environments and known limits](docs/TESTING.md#compatibility-evidence) before relying on a particular setup. Updates are downloaded manually from [Releases](https://github.com/Mxlted/mxlt-utils/releases).
+> **v0.3.5 is a preview release.** App compatibility and hardware coverage are still growing. See [tested environments and known limits](docs/TESTING.md#compatibility-evidence) before relying on a particular setup. Updates are downloaded manually from [Releases](https://github.com/Mxlted/mxlt-utils/releases).
 
 ## Privacy & permissions
 
@@ -92,7 +92,7 @@ After replacing a development build, you may need to remove the old Accessibilit
 
 Quit mxlt-utils to release its input monitoring. If its menu is inaccessible, use Activity Monitor to quit it, or Force Quit it if needed. If the keyboard still works, you can open Terminal and run `pkill -x MxltUtils` to stop the utility. Restore Accessibility access before reopening it if you want to use its features.
 
-The current development build checks whether input access still works when an enabled Accessibility entry is deleted; macOS can continue reporting it as allowed. It detaches monitoring when that check fails. Restore access, then click **Retry monitoring**. This change is not included in the published 0.3.0 release and still needs real-device deletion and revocation testing.
+Version 0.3.5 checks whether input access still works when an enabled Accessibility entry is deleted; macOS can continue reporting it as allowed. It detaches monitoring when that check fails. Restore access, then click **Retry monitoring**. If you are using an older version, update to receive this fix.
 
 </details>
 

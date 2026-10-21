@@ -142,6 +142,30 @@ final class MiddleScrollService {
         if wasActive { onFailure?() }
     }
 
+    /// Schedule one recovery attempt without querying permission in the input callback.
+    private func recoverAfterTimeout() -> Bool {
+        guard enabled, !retryUsed, let tap, let watchdog = permissionWatchdog else { return false }
+        retryUsed = true
+        watchdog.checkBeforeRecovery { [weak self] allowed in
+            DispatchQueue.main.async {
+                guard let self, self.enabled, self.permissionWatchdog === watchdog else { return }
+                guard allowed else { self.permissionLost(); return }
+                let resumed = watchdog.performIfAllowed {
+                    CGEvent.tapEnable(tap: tap, enable: true)
+                    return CGEvent.tapIsEnabled(tap: tap)
+                }
+                guard !resumed else { return }
+                if watchdog.wasRevoked {
+                    self.permissionLost()
+                } else {
+                    self.stopImmediately()
+                    self.onFailure?()
+                }
+            }
+        }
+        return true
+    }
+
     func cancel() {
         cancel(reason: "lifecycle")
     }
@@ -169,24 +193,7 @@ final class MiddleScrollService {
         guard permissionWatchdog?.allowsInput == true else { return false }
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             cancel(reason: "tap disabled")
-            if type == .tapDisabledByTimeout, enabled, !retryUsed, let tap, let watchdog = permissionWatchdog {
-                retryUsed = true
-                watchdog.checkBeforeRecovery { [weak self] allowed in
-                    DispatchQueue.main.async {
-                        guard let self, self.enabled, self.permissionWatchdog === watchdog else { return }
-                        guard allowed else { self.permissionLost(); return }
-                        guard watchdog.performIfAllowed({
-                            CGEvent.tapEnable(tap: tap, enable: true)
-                            return CGEvent.tapIsEnabled(tap: tap)
-                        }) else {
-                            if watchdog.wasRevoked { self.permissionLost() }
-                            else { self.stopImmediately(); self.onFailure?() }
-                            return
-                        }
-                    }
-                }
-                return false
-            }
+            if type == .tapDisabledByTimeout, recoverAfterTimeout() { return false }
             stopImmediately()
             onFailure?()
             return false

@@ -4,13 +4,13 @@ Hold the wheel, move beyond the dead zone, and keep the pointer displaced to con
 
 ## Distance and speed
 
-The current source build uses a progressive distance curve: small movements near the anchor give fine control, and moving farther away accelerates more strongly. Moving closer slows scrolling; holding the pointer still keeps scrolling at that distance's speed. At the default 1× setting, distances of 10, 100, 200 and 350 points beyond the dead zone request 44, 800, 2,400 and 6,300 points per second. This is an original tuning for distance-controlled scrolling, not a claim of matching an exact Windows algorithm.
+Version 0.3.5 uses a progressive distance curve: small movements near the anchor give fine control, and moving farther away accelerates more strongly. Moving closer slows scrolling; holding the pointer still keeps scrolling at that distance's speed. At the default 1× setting, distances of 10, 100, 200 and 350 points beyond the dead zone request 44, 800, 2,400 and 6,300 points per second. This is an original tuning for distance-controlled scrolling, not a claim of matching an exact Windows algorithm.
 
 The speed slider multiplies the curve. All settings share the existing absolute safety ceiling of 8,000 points per second, replacing the earlier lower ceiling at ordinary speed settings. The radial curve is `speed = min(8000, d × (4 + d / 25) × sensitivity)`, where `d` is distance beyond the dead zone. Horizontal, vertical and diagonal gestures use the same curve. Smoothing changes how quickly output approaches the requested speed; it does not change the distance curve or add momentum after stopping.
 
 ## Smooth scrolling
 
-Version 0.3.0 provides a continuous **Scroll speed** slider from 0.2× to 10×, with a numeric readout and no step tick marks. Scroll speed controls travel for a given pointer displacement; values above 3× also raise the speed ceiling, reaching 8,000 points per second at 10×. Existing values through 3× retain their 2,400-point ceiling. The control defaults to 1× and persists across relaunches. Smooth scrolling uses its fixed default response; earlier preview smooth-speed preferences are ignored.
+The continuous **Scroll speed** slider ranges from 0.2× to 10×, with a numeric readout and no step tick marks. It scales travel for a given pointer displacement, up to the shared 8,000-point-per-second ceiling. The control defaults to 1× and persists across relaunches. Smooth scrolling uses its fixed default response; earlier preview smooth-speed preferences are ignored.
 
 Version 0.2.0 includes **Smooth scrolling**, enabled by default in Middle scrolling settings. It eases speed changes while the button is held; turning it off gives direct speed changes. This setting is retained across disable/relaunch, and changing it cancels an active gesture before restarting monitoring.
 
