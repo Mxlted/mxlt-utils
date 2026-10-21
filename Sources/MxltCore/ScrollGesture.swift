@@ -28,26 +28,21 @@ public struct ScrollVelocity: Equatable, Sendable {
 
 public struct ScrollSettings: Equatable, Sendable {
     public static let sensitivityRange = 0.2...10.0
-    public static let smoothSpeedRange = 0.2...3.0
     public static let deadZoneRange = 2.0...40.0
     public let sensitivity: Double
     public let deadZone: Double
     public let reversed: Bool
     public let smooth: Bool
-    public let smoothSpeed: Double
 
     // Preserve the established speed ceiling for existing settings; the extended
     // range raises it proportionally, up to 8,000 points per second at 10x.
     var speedLimit: Double { 2_400 * max(1, sensitivity / 3) }
-    var responseTime: TimeInterval { 0.055 / smoothSpeed }
 
-    public init(sensitivity: Double = 1, deadZone: Double = 8, reversed: Bool = false, smooth: Bool = true,
-                smoothSpeed: Double = 1) {
+    public init(sensitivity: Double = 1, deadZone: Double = 8, reversed: Bool = false, smooth: Bool = true) {
         self.sensitivity = Self.sanitize(sensitivity, fallback: 1, range: Self.sensitivityRange)
         self.deadZone = Self.sanitize(deadZone, fallback: 8, range: Self.deadZoneRange)
         self.reversed = reversed
         self.smooth = smooth
-        self.smoothSpeed = Self.sanitize(smoothSpeed, fallback: 1, range: Self.smoothSpeedRange)
     }
 
     private static func sanitize(_ value: Double, fallback: Double, range: ClosedRange<Double>) -> Double {
@@ -133,8 +128,7 @@ public struct ScrollGesture: Sendable {
             motion.reset()
             return .zero
         }
-        return motion.step(toward: velocity, elapsed: elapsed, smooth: settings.smooth,
-                           responseTime: settings.responseTime)
+        return motion.step(toward: velocity, elapsed: elapsed, smooth: settings.smooth)
     }
 
     /// Checks the release position too: a missed final move must not become a

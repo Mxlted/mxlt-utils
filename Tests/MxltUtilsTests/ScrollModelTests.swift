@@ -16,7 +16,6 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertFalse(model.enabled)
         XCTAssertEqual(model.settings, ScrollSettings())
         XCTAssertTrue(model.smooth)
-        XCTAssertEqual(model.smoothSpeed, 1)
         XCTAssertEqual(model.status, "Off")
         XCTAssertTrue(model.exclusions.contains { $0.bundleID == "org.blenderfoundation.blender" })
     }
@@ -27,7 +26,6 @@ final class ScrollModelTests: XCTestCase {
         let model = ScrollModel(defaults: defaults)
         model.enabled = true
         model.sensitivity = 8.1
-        model.smoothSpeed = 2.5
         model.deadZone = 17
         model.reversed = true
         model.smooth = false
@@ -35,7 +33,7 @@ final class ScrollModelTests: XCTestCase {
         model.enabled = false
         let restored = ScrollModel(defaults: defaults)
         XCTAssertFalse(restored.enabled)
-        XCTAssertEqual(restored.settings, ScrollSettings(sensitivity: 8.1, deadZone: 17, reversed: true, smooth: false, smoothSpeed: 2.5))
+        XCTAssertEqual(restored.settings, ScrollSettings(sensitivity: 8.1, deadZone: 17, reversed: true, smooth: false))
         XCTAssertEqual(restored.exclusions, model.exclusions)
         restored.enabled = true
         XCTAssertEqual(restored.settings, model.settings)
@@ -47,12 +45,9 @@ final class ScrollModelTests: XCTestCase {
             let defaults = makeDefaults()
             defaults.set(value, forKey: "scroll.sensitivity")
             defaults.set(value, forKey: "scroll.deadZone")
-            defaults.set(value, forKey: "scroll.smoothSpeed")
             let model = ScrollModel(defaults: defaults)
             XCTAssertEqual(model.sensitivity, 1)
             XCTAssertEqual(model.deadZone, 8)
-            XCTAssertEqual(model.smoothSpeed, 1)
-            XCTAssertEqual(defaults.double(forKey: "scroll.smoothSpeed"), 1)
             XCTAssertTrue(defaults.double(forKey: "scroll.sensitivity").isFinite)
             XCTAssertTrue(defaults.double(forKey: "scroll.deadZone").isFinite)
         }
@@ -91,17 +86,17 @@ final class ScrollModelTests: XCTestCase {
     }
 
     @MainActor
-    func testSmoothSpeedBoundsAreRepairedAtLoadAndDuringEdits() async {
-        for (input, expected) in [(-10.0, 0.2), (10.0, 3.0), (.nan, 1.0), (.infinity, 1.0)] {
+    func testFormerSmoothSpeedPreferenceDoesNotChangeDefaultResponse() async {
+        for savedValue in [0.2, 3.0, Double.nan] {
             let defaults = makeDefaults()
-            defaults.set(input, forKey: "scroll.smoothSpeed")
+            defaults.set(savedValue, forKey: "scroll.smoothSpeed")
             let model = ScrollModel(defaults: defaults)
-            XCTAssertEqual(model.settings.smoothSpeed, expected)
-            XCTAssertEqual(defaults.double(forKey: "scroll.smoothSpeed"), expected)
-            model.smoothSpeed = 2
-            model.smoothSpeed = input
-            XCTAssertEqual(model.smoothSpeed, expected)
-            XCTAssertEqual(ScrollModel(defaults: defaults).settings.smoothSpeed, expected)
+            XCTAssertEqual(model.settings, ScrollSettings())
+            var gesture = ScrollGesture()
+            gesture.begin(at: ScrollPoint(x: 0, y: 0), timestamp: 1, settings: model.settings)
+            gesture.move(to: ScrollPoint(x: 83, y: 0))
+            // The fixed 55 ms response produces one point on the first 60 Hz frame.
+            XCTAssertEqual(gesture.scrollDelta(elapsed: 1.0 / 60).x, 1)
         }
     }
 
