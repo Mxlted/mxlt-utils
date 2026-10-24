@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.7
 
 - Declare the app's macOS platform explicitly so macOS identifies the Apple-silicon bundle correctly instead of classifying it as an iOS app.
 

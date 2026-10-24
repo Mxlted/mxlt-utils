@@ -2,6 +2,8 @@
 
 Normal CI stays independent of signing credentials. Release locally with an installed Developer ID Application identity and an existing `notarytool` Keychain profile. Never export keys or upload credentials to Actions.
 
+Release pages use one title: `VERSION — Short description`. Keep the opening `#` title in the standalone Markdown notes, but omit that line and its following blank line from the GitHub release body. GitHub displays the release title itself; the body should begin with the summary, followed by `##` sections as needed.
+
 1. Finish the relevant native checks and full routine checks in [TESTING.md](TESTING.md). Review input safety and ensure no reference repository, agent notes, secrets, or generated output is indexed. Confirm source provenance and license notices.
 2. Update `Resources/Info.plist`, changelog, release notes, and verification evidence. Commit and push, then require CI success on that exact source commit. Use a semantic `v0.x.y` tag; never move a published tag.
 3. Build once from the final clean commit into a fresh artifact directory. Keep that commit and all subsequent submission IDs in local release records. The script refuses to overwrite an existing Developer ID app.

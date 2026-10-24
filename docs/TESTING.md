@@ -13,6 +13,12 @@ The tests use isolated preferences and pure decision logic where possible. Acces
 
 Coverage includes close eligibility and native identity, down/up movement, shortcut gating, force protections, sheets/save cancellation, remaining/replacement windows, Discord's narrow hidden-close policy, bounded AX recovery, settings/permission transitions, scroll velocity/transitions, click replay, synthetic tagging, pinned-window validation, and independent session suspension.
 
+## 0.3.7 Apps launcher metadata
+
+The installed 0.3.6 bundle was missing from Apple's Apps view despite valid signatures, Spotlight indexing, and correct Launch Services resolution. System Information reported `arch_kind=arch_ios`. Adding `CFBundleSupportedPlatforms=[MacOSX]` changed the signed candidate to `arch_arm`; the corrected, notarized installed preview retained that classification, and the user confirmed it appeared in Apps. The menu-bar-only setting remains enabled; visible comparison apps also used it. Registration/index refresh and restarting the launcher interface alone had not resolved the issue.
+
+This is a bundle metadata fix with no runtime input-policy changes. Release validation checks the platform declaration in the packaged app as well as the existing signature, ticket, version and architecture checks.
+
 ## 0.3.6 Quit on Close changes
 
 The full suite passes 210 XCTest cases: 64 quit-policy, 37 scroll/session-policy, and 109 native-adapter/settings cases. New injected Accessibility fixtures cover direct and Chromium sibling tab-body hits, native ancestry and actual close-control proof, wrong recipients, web tabs, disabled controls, remaining windows, save sheets, and a remote dialog's official Cancel button. Dialog confirmation waits for disappearance and stable empty snapshots; staying dialogs, replacements, and unreadable state cannot quit. Red-button regression tests run with Cancel recognition enabled. Input tests construct events without posting them and check middle-button-only routing and rejection of replay tags. Both new triggers are tested against force quit and any-window policy. Existing preference keys and settings are retained.
