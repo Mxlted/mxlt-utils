@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.6
 
 - Rename the CallQuits feature to **Quit on Close** throughout settings and the menu, keeping existing preferences and exceptions.
 - Request a graceful quit after Cancel dismisses an app’s only verified standalone dialog, including supported startup file choosers. Remaining document windows, save sheets, replacement windows, and uncertain state still keep the app open.
