@@ -15,6 +15,8 @@ final class AccessibilityClient {
         let buttonFrame: CGRect
         let allowsApplicationHide: Bool
         var trigger: CloseTrigger = .windowButton
+        // Supplied only by the native system-service/host-window identity check.
+        var verifiedHostedPanel = false
     }
 
     /// AX-only proof, kept separate from application eligibility and native event identity.
@@ -64,12 +66,13 @@ final class AccessibilityClient {
     }
 
     func closeButton(at point: CGPoint, eventTime: TimeInterval, targetPID: pid_t, includingTabs: Bool = false,
-                     middleClick: Bool = false, includingDialogCancel: Bool = false) -> Hit? {
+                     middleClick: Bool = false, includingDialogCancel: Bool = false,
+                     verifiedHostedPanel: Bool = false) -> Hit? {
         guard let app = NSRunningApplication(processIdentifier: targetPID), isEligible(app),
               let control = captureCloseControl(at: point, eventTime: eventTime, targetPID: targetPID,
                                                 includingTabs: includingTabs, middleClick: middleClick,
                                                 includingDialogCancel: includingDialogCancel,
-                                                targetBundleIdentifier: app.bundleIdentifier)
+                                                verifiedHostedPanel: verifiedHostedPanel)
         else { return nil }
         // The monitor rechecks eligibility after release and immediately before termination.
         // Let it adjudicate a same-process Discord hide that arrives while capture finishes.
@@ -79,7 +82,8 @@ final class AccessibilityClient {
             control.initialWindows.count == 1 && (try? bool(control.window, kAXMinimizedAttribute)) == false
         return Hit(application: app, appElement: control.appElement, window: control.window,
                    initialWindows: control.initialWindows, buttonFrame: control.buttonFrame,
-                   allowsApplicationHide: allowsHide, trigger: control.trigger)
+                   allowsApplicationHide: allowsHide, trigger: control.trigger,
+                   verifiedHostedPanel: verifiedHostedPanel && control.trigger == .dialogCancel)
     }
 
     private func isEligible(_ app: NSRunningApplication) -> Bool {
@@ -91,7 +95,7 @@ final class AccessibilityClient {
     func captureCloseControl(at point: CGPoint, eventTime: TimeInterval, targetPID: pid_t,
                              includingTabs: Bool = false, middleClick: Bool = false,
                              includingDialogCancel: Bool = false,
-                             targetBundleIdentifier: String? = nil) -> CloseControl? {
+                             verifiedHostedPanel: Bool = false) -> CloseControl? {
         deadline = ProcessInfo.processInfo.systemUptime + 0.55
         let now = ProcessInfo.processInfo.systemUptime
         guard targetPID > 1, eventTime.isFinite, eventTime >= 0, now >= eventTime,
@@ -104,7 +108,7 @@ final class AccessibilityClient {
             }
             if includingDialogCancel,
                let control = try dialogCancelControl(hit: button, at: point, targetPID: targetPID,
-                                                    targetBundleIdentifier: targetBundleIdentifier) { return control }
+                                                    verifiedHostedPanel: verifiedHostedPanel) { return control }
             var verifiedTabButton = false
             // Some apps expose a child of the actual button to hit testing.
             for depth in 0...4 {
@@ -283,15 +287,18 @@ final class AccessibilityClient {
     /// A verified Cancel on the sole standalone dialog can finish an otherwise windowless
     /// app (for example TextEdit's startup chooser). Never infer this from the button label.
     private func dialogCancelControl(hit: AXUIElement, at point: CGPoint, targetPID: pid_t,
-                                     targetBundleIdentifier: String?) throws -> CloseControl? {
+                                     verifiedHostedPanel: Bool) throws -> CloseControl? {
         var button = hit
         for depth in 0...4 {
             if try string(button, kAXRoleAttribute) == kAXButtonRole { break }
             guard depth < 4, let parent = try element(button, kAXParentAttribute) else { return nil }
             button = parent
         }
-        let chooserWindow = try targetBundleIdentifier == "com.apple.TextEdit"
-            ? textEditOpenPanelWindow(for: button, targetPID: targetPID) : nil
+        let chooserWindow = try verifiedHostedPanel
+            ? hostedOpenPanelWindow(for: button, targetPID: targetPID) : nil
+        // The service also hosts Save panels. Its identity never authorizes an arbitrary
+        // dialog: this path requires the complete observed Open-panel structure.
+        guard !verifiedHostedPanel || chooserWindow != nil else { return nil }
         let window: AXUIElement
         if let chooserWindow {
             window = chooserWindow
@@ -301,7 +308,7 @@ final class AccessibilityClient {
             window = owner
         }
         // Remote open-panel controls may have a different PID. Exact membership in the
-        // native recipient's AXWindows and its official AXCancelButton establish ownership.
+        // verified host's AXWindows and its official AXCancelButton establish ownership.
         let app = AXUIElementCreateApplication(targetPID)
         let initial = try windows(app)
         guard initial.count == 1, CFEqual(initial[0], window),
@@ -320,11 +327,12 @@ final class AccessibilityClient {
                             buttonFrame: frame, trigger: .dialogCancel)
     }
 
-    /// Observed TextEdit startup chooser: AXStandardWindow/open-panel, with CancelButton
-    /// directly inside its AXSplitGroup. Both AXWindow on the button and AXCancelButton on
-    /// the window return noValue. Scope this compatibility path to TextEdit and verify both
-    /// directions of the exact native ancestry; a label or identifier alone is insufficient.
-    private func textEditOpenPanelWindow(for button: AXUIElement, targetPID: pid_t) throws -> AXUIElement? {
+    /// Observed system chooser in TextEdit, Preview and QuickTime: AXStandardWindow/open-panel,
+    /// with CancelButton directly inside its AXSplitGroup. Both AXWindow on the button and AXCancelButton on
+    /// the window return noValue. The caller must have verified the native system-service
+    /// recipient and host window owner. Also verify both directions of the exact ancestry;
+    /// a label, identifier or application name alone is insufficient.
+    private func hostedOpenPanelWindow(for button: AXUIElement, targetPID: pid_t) throws -> AXUIElement? {
         guard try value(button, kAXIdentifierAttribute, optional: true) as? String == "CancelButton",
               let group = try element(button, kAXParentAttribute),
               try string(group, kAXRoleAttribute) == kAXSplitGroupRole,

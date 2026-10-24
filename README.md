@@ -112,7 +112,7 @@ Quit on Close requires a supported, verified close action. It never quits an app
 
 **⌘W, tab-close buttons, and middle-clicking a supported tab always require the last window to close and request a normal quit.** A remaining tab or window keeps the app running. Discord has a narrowly scoped exception for its verified hide-on-close behavior.
 
-Clicking the verified Cancel button in an app’s only standalone dialog, such as TextEdit’s opening file chooser, also requests a normal quit after the dialog disappears. Existing document windows, save sheets, replacement windows, and unreadable state prevent this. Simply launching an app with no windows never triggers quit.
+Clicking the verified Cancel button in an app’s only standalone dialog, including supported opening file choosers in TextEdit, Preview, and QuickTime Player, also requests a normal quit after the dialog disappears. Existing document windows, save sheets, replacement windows, and unreadable state prevent this. Simply launching an app with no windows never triggers quit.
 
 Shift-click force quit is a separate, optional setting, off by default. It applies only to the red close button and can discard unsaved work.
 

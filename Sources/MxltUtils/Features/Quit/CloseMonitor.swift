@@ -490,7 +490,7 @@ final class CloseMonitor {
             worker.mouseDown(point: point, eventTime: timestamp, targetPID: identity.processID, generation: generation,
                              includingTabs: model.additionalCloseMethods && intent == .normal,
                              middleClick: button == 2, includingDialogCancel: button == 0 && intent == .normal,
-                             requiresDialogCancel: hostedPanelIdentity != nil)
+                             verifiedHostedPanel: hostedPanelIdentity != nil)
             let token = generation
             DispatchQueue.main.asyncAfter(deadline: .now() + CloseGesture.maximumDuration) { [weak self] in
                 guard let self, token == self.generation, self.gesture != nil else { return }
@@ -698,14 +698,15 @@ private final class CloseWorker {
     }
 
     func mouseDown(point: CGPoint, eventTime: TimeInterval, targetPID: pid_t, generation: UInt64,
-                   includingTabs: Bool, middleClick: Bool, includingDialogCancel: Bool, requiresDialogCancel: Bool) {
+                   includingTabs: Bool, middleClick: Bool, includingDialogCancel: Bool, verifiedHostedPanel: Bool) {
         queue.async {
             guard self.generation == generation else { return }
             self.downTime = eventTime
             self.down = self.client.closeButton(at: point, eventTime: eventTime, targetPID: targetPID,
                                                 includingTabs: includingTabs, middleClick: middleClick,
-                                                includingDialogCancel: includingDialogCancel)
-            if requiresDialogCancel && self.down?.trigger != .dialogCancel { self.down = nil }
+                                                includingDialogCancel: includingDialogCancel,
+                                                verifiedHostedPanel: verifiedHostedPanel)
+            if verifiedHostedPanel && self.down?.trigger != .dialogCancel { self.down = nil }
         }
     }
 
@@ -757,7 +758,7 @@ private final class CloseWorker {
         var session = session
         let snapshot = client.snapshot(for: hit)
         var recovery = recovery
-        let retry = recovery.prepareRetry(session: &session, bundleIdentifier: hit.application.bundleIdentifier,
+        let retry = recovery.prepareRetry(session: &session, verifiedHostedPanel: hit.verifiedHostedPanel,
                                           trigger: hit.trigger, snapshot: snapshot, error: client.snapshotError)
         if !retry {
             let checkedAt = ProcessInfo.processInfo.systemUptime

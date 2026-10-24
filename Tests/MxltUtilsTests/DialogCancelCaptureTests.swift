@@ -75,13 +75,13 @@ final class DialogCancelCaptureTests: XCTestCase {
         }
 
         func capture(enabled: Bool = true, targetPID: pid_t? = nil, eventTime: TimeInterval? = nil,
-                     at point: CGPoint? = nil, bundleIdentifier: String? = nil) -> AccessibilityClient.CloseControl? {
+                     at point: CGPoint? = nil, verifiedHostedPanel: Bool = false) -> AccessibilityClient.CloseControl? {
             client().captureCloseControl(at: point ?? self.point, eventTime: eventTime ?? ProcessInfo.processInfo.systemUptime,
                                          targetPID: targetPID ?? pid, includingDialogCancel: enabled,
-                                         targetBundleIdentifier: bundleIdentifier)
+                                         verifiedHostedPanel: verifiedHostedPanel)
         }
 
-        func useTextEditChooser() {
+        func useHostedChooser() {
             set(dialog, kAXSubroleAttribute, kAXStandardWindowSubrole as CFString)
             set(dialog, kAXIdentifierAttribute, "open-panel" as CFString)
             set(dialog, kAXModalAttribute, kCFBooleanFalse)
@@ -118,12 +118,12 @@ final class DialogCancelCaptureTests: XCTestCase {
         }
     }
 
-    func testObservedTextEditChooserResolvesCancelThroughNativeAncestryWithoutOfficialAttributes() throws {
+    func testObservedHostedChooserResolvesCancelThroughNativeAncestryWithoutOfficialAttributes() throws {
         for childHit in [false, true] {
             let fixture = Fixture()
-            fixture.useTextEditChooser()
+            fixture.useHostedChooser()
             if childHit { fixture.hit = fixture.child }
-            let control = try XCTUnwrap(fixture.capture(bundleIdentifier: "com.apple.TextEdit"))
+            let control = try XCTUnwrap(fixture.capture(verifiedHostedPanel: true))
             XCTAssertEqual(control.trigger, .dialogCancel)
             XCTAssertTrue(CFEqual(control.window, fixture.dialog))
             XCTAssertEqual(control.initialWindows.count, 1)
@@ -137,12 +137,12 @@ final class DialogCancelCaptureTests: XCTestCase {
         }
     }
 
-    func testTextEditChooserIdentifiersCannotAuthorizeOtherAppsOrUnsupportedAncestry() {
+    func testHostedChooserIdentifiersRequireNativeServiceProofAndSupportedAncestry() {
         let fixture = Fixture()
-        fixture.useTextEditChooser()
-        for bundleID: String? in [nil, "com.apple.Preview", "com.example.fixture"] {
-            XCTAssertNil(fixture.capture(bundleIdentifier: bundleID))
-        }
+        fixture.useHostedChooser()
+        // Matching identifiers alone never authorize the compatibility path.
+        XCTAssertNil(fixture.capture())
+        XCTAssertNil(fixture.capture(verifiedHostedPanel: false))
         let cases: [(String, (Fixture) -> Void)] = [
             ("wrong window identifier", { $0.set($0.dialog, kAXIdentifierAttribute, "save-panel" as CFString) }),
             ("wrong button identifier", { $0.set($0.cancel, kAXIdentifierAttribute, "OKButton" as CFString) }),
@@ -167,9 +167,9 @@ final class DialogCancelCaptureTests: XCTestCase {
         ]
         for (reason, mutate) in cases {
             let invalid = Fixture()
-            invalid.useTextEditChooser()
+            invalid.useHostedChooser()
             mutate(invalid)
-            XCTAssertNil(invalid.capture(bundleIdentifier: "com.apple.TextEdit"), reason)
+            XCTAssertNil(invalid.capture(verifiedHostedPanel: true), reason)
         }
     }
 
@@ -177,6 +177,20 @@ final class DialogCancelCaptureTests: XCTestCase {
         let fixture = Fixture()
         fixture.beforeButtonRead = { fixture.set(fixture.app, kAXWindowsAttribute, [] as NSArray) }
         XCTAssertEqual(try XCTUnwrap(fixture.capture()).initialWindows.count, 1)
+    }
+
+    func testHostedServiceCannotAuthorizeSavePanelsOrUnrelatedOfficialDialogs() throws {
+        let dialog = Fixture()
+        XCTAssertNotNil(dialog.capture()) // Existing direct-recipient official-dialog support.
+        XCTAssertNil(dialog.capture(verifiedHostedPanel: true))
+        dialog.set(dialog.dialog, kAXIdentifierAttribute, "save-panel" as CFString)
+        XCTAssertNil(dialog.capture(verifiedHostedPanel: true))
+
+        let save = Fixture()
+        save.useHostedChooser()
+        save.set(save.dialog, kAXIdentifierAttribute, "save-panel" as CFString)
+        save.set(save.dialog, kAXCancelButtonAttribute, save.cancel)
+        XCTAssertNil(save.capture(verifiedHostedPanel: true))
     }
 
     func testCancelRejectsRemainingWindowsSheetsDocumentsUnrelatedControlsAndUnknownState() {

@@ -3,7 +3,7 @@ import CallQuitsCore
 
 /// AppKit sends open-panel input to its system XPC service while WindowServer retains
 /// the host application's window ownership. This exception only admits a candidate;
-/// a verified TextEdit Cancel control and the normal graceful confirmation remain mandatory.
+/// app eligibility, a verified Cancel control and normal graceful confirmation remain mandatory.
 struct HostedPanelEventIdentity {
     static let serviceBundleID = "com.apple.appkit.xpc.openAndSavePanelService"
     static let serviceExecutable = "/System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/" +
@@ -15,7 +15,8 @@ struct HostedPanelEventIdentity {
     init?(nativeProcessID: Int64, eventWindowID: Int64, windowOwnerProcessID: Int64?,
           ownerBundleIdentifier: String?, recipientBundleIdentifier: String?, recipientExecutable: String?) {
         guard nativeProcessID > 1, nativeProcessID <= Int64(Int32.max), eventWindowID > 0,
-              ownerBundleIdentifier == "com.apple.TextEdit",
+              let ownerBundleIdentifier, !ownerBundleIdentifier.isEmpty,
+              !ownerBundleIdentifier.contains(where: { $0.isWhitespace }),
               recipientBundleIdentifier == Self.serviceBundleID,
               recipientExecutable == Self.serviceExecutable,
               let owner = windowOwnerProcessID, owner != nativeProcessID,
