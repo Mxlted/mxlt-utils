@@ -170,7 +170,7 @@ public struct CloseSession: Sendable {
     private let allowsApplicationHide: Bool
     private let startedAt: TimeInterval
     private var previousObservationAt: TimeInterval
-    private var completionObservedAt: TimeInterval?
+    private var hasObservedCompletion = false
     private var confirmationStartedAt: TimeInterval?
     private var confirmationWindowCount: Int?
     private var confirmationKind: CompletionKind?
@@ -217,7 +217,7 @@ public struct CloseSession: Sendable {
             completionKind = .hiddenRetainedWindow
         } else if snapshot.targetWindowPresent {
             // A window that reappears may represent a canceled close or reused AX identity.
-            guard completionObservedAt == nil else { return cancel(.windowSetChanged) }
+            guard !hasObservedCompletion else { return cancel(.windowSetChanged) }
             return .wait
         } else {
             completionKind = .disappeared
@@ -227,8 +227,8 @@ public struct CloseSession: Sendable {
             return cancel(.remainingWindows)
         }
 
-        guard completionObservedAt != nil else {
-            completionObservedAt = now
+        guard hasObservedCompletion else {
+            hasObservedCompletion = true
             confirmationStartedAt = now
             confirmationWindowCount = snapshot.windowCount
             confirmationKind = completionKind

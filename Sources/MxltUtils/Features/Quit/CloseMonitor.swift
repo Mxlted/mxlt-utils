@@ -757,26 +757,23 @@ private final class CloseWorker {
         var session = session
         let snapshot = client.snapshot(for: hit)
         var recovery = recovery
-        if hit.application.bundleIdentifier == "com.apple.TextEdit",
-           recovery.shouldRetry(trigger: hit.trigger, snapshot: snapshot, error: client.snapshotError) {
-            session.discardConfirmationInterval()
-            // Preserve the original session and deadline. A failed read authorizes nothing;
-            // window/sheet notifications remain active during the bounded fresh-read recovery.
-            queue.asyncAfter(deadline: .now() + 0.1) {
-                self.poll(hit: hit, session: session, generation: generation, recovery: recovery, completion: completion)
+        let retry = recovery.prepareRetry(session: &session, bundleIdentifier: hit.application.bundleIdentifier,
+                                          trigger: hit.trigger, snapshot: snapshot, error: client.snapshotError)
+        if !retry {
+            let checkedAt = ProcessInfo.processInfo.systemUptime
+            let decision = session.evaluate(snapshot: snapshot, now: checkedAt)
+            switch decision {
+            case .quit, .cancel:
+                DispatchQueue.main.async { completion(decision, checkedAt, snapshot.applicationHidden) }
+                return
+            case .wait: break
             }
-            return
         }
-        let checkedAt = ProcessInfo.processInfo.systemUptime
-        let decision = session.evaluate(snapshot: snapshot, now: checkedAt)
-        switch decision {
-        case .quit, .cancel:
-            DispatchQueue.main.async { completion(decision, checkedAt, snapshot.applicationHidden) }
-        case .wait:
-            // Schedule from completion, so slow AX reads never build up a backlog of overdue polls.
-            queue.asyncAfter(deadline: .now() + 0.1) {
-                self.poll(hit: hit, session: session, generation: generation, recovery: recovery, completion: completion)
-            }
+        // Schedule from completion, so slow AX reads never build a backlog. Retries keep
+        // the original session/deadline and active window/sheet observers; failed reads
+        // authorize nothing and fresh snapshots must cover a complete confirmation interval.
+        queue.asyncAfter(deadline: .now() + 0.1) {
+            self.poll(hit: hit, session: session, generation: generation, recovery: recovery, completion: completion)
         }
     }
 }

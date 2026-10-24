@@ -49,41 +49,60 @@ final class DialogCloseReadRecoveryTests: XCTestCase {
     private let empty = CloseSnapshot(windowCount: 0, targetWindowPresent: false, hasBlockingUI: false, isReliable: true)
 
     func testAtMostTwoCannotCompleteReadsCanBeRetried() {
+        var session = CloseSession(behavior: .lastWindow, startedAt: 0)
         var recovery = DialogCloseReadRecovery()
-        XCTAssertTrue(recovery.shouldRetry(trigger: .dialogCancel, snapshot: unreliable, error: .cannotComplete))
-        XCTAssertTrue(recovery.shouldRetry(trigger: .dialogCancel, snapshot: unreliable, error: .cannotComplete))
-        XCTAssertFalse(recovery.shouldRetry(trigger: .dialogCancel, snapshot: unreliable, error: .cannotComplete))
+        XCTAssertTrue(recovery.prepareRetry(session: &session, bundleIdentifier: "com.apple.TextEdit",
+                                             trigger: .dialogCancel, snapshot: unreliable, error: .cannotComplete))
+        XCTAssertTrue(recovery.prepareRetry(session: &session, bundleIdentifier: "com.apple.TextEdit",
+                                             trigger: .dialogCancel, snapshot: unreliable, error: .cannotComplete))
+        XCTAssertFalse(recovery.prepareRetry(session: &session, bundleIdentifier: "com.apple.TextEdit",
+                                             trigger: .dialogCancel, snapshot: unreliable, error: .cannotComplete))
         for trigger in [CloseTrigger.windowButton, .tabButton, .middleClickTab, .keyboardShortcut] {
             recovery = DialogCloseReadRecovery()
-            XCTAssertFalse(recovery.shouldRetry(trigger: trigger, snapshot: unreliable, error: .cannotComplete))
+            XCTAssertFalse(recovery.prepareRetry(session: &session, bundleIdentifier: "com.apple.TextEdit",
+                                             trigger: trigger, snapshot: unreliable, error: .cannotComplete))
         }
         for error: AXError? in [nil, .failure, .invalidUIElement, .apiDisabled, .attributeUnsupported, .noValue] {
             recovery = DialogCloseReadRecovery()
-            XCTAssertFalse(recovery.shouldRetry(trigger: .dialogCancel, snapshot: unreliable, error: error))
+            XCTAssertFalse(recovery.prepareRetry(session: &session, bundleIdentifier: "com.apple.TextEdit",
+                                             trigger: .dialogCancel, snapshot: unreliable, error: error))
+        }
+    }
+
+    func testOtherAppsCannotRetryOrDiscardTheirConfirmationInterval() {
+        for bundle: String? in [nil, "com.apple.Preview", "com.example.fixture"] {
+            var recovery = DialogCloseReadRecovery()
+            var session = CloseSession(behavior: .lastWindow, startedAt: 0)
+            XCTAssertEqual(session.evaluate(snapshot: empty, now: 0.1), .wait)
+            XCTAssertFalse(recovery.prepareRetry(session: &session, bundleIdentifier: bundle,
+                                                 trigger: .dialogCancel, snapshot: unreliable, error: .cannotComplete))
+            XCTAssertEqual(session.evaluate(snapshot: empty, now: 0.3), .quit)
         }
     }
 
     func testUnavailableReadCannotBridgeEmptyConfirmationOrExtendOriginalDeadline() {
         var recovery = DialogCloseReadRecovery()
         var session = CloseSession(behavior: .lastWindow, startedAt: 0)
-        XCTAssertTrue(recovery.shouldRetry(trigger: .dialogCancel, snapshot: unreliable, error: .cannotComplete))
+        XCTAssertTrue(recovery.prepareRetry(session: &session, bundleIdentifier: "com.apple.TextEdit",
+                                             trigger: .dialogCancel, snapshot: unreliable, error: .cannotComplete))
         XCTAssertEqual(session.evaluate(snapshot: empty, now: 0.4), .wait)
         XCTAssertEqual(session.evaluate(snapshot: empty, now: 0.6), .quit)
 
         recovery = DialogCloseReadRecovery()
         session = CloseSession(behavior: .lastWindow, startedAt: 0)
-        XCTAssertFalse(recovery.shouldRetry(trigger: .dialogCancel, snapshot: empty, error: nil))
+        XCTAssertFalse(recovery.prepareRetry(session: &session, bundleIdentifier: "com.apple.TextEdit",
+                                             trigger: .dialogCancel, snapshot: empty, error: nil))
         XCTAssertEqual(session.evaluate(snapshot: empty, now: 0.1), .wait)
-        XCTAssertTrue(recovery.shouldRetry(trigger: .dialogCancel, snapshot: unreliable, error: .cannotComplete))
-        session.discardConfirmationInterval()
+        XCTAssertTrue(recovery.prepareRetry(session: &session, bundleIdentifier: "com.apple.TextEdit",
+                                             trigger: .dialogCancel, snapshot: unreliable, error: .cannotComplete))
         XCTAssertEqual(session.evaluate(snapshot: empty, now: 0.4), .wait)
         XCTAssertEqual(session.evaluate(snapshot: empty, now: 0.5), .wait)
         XCTAssertEqual(session.evaluate(snapshot: empty, now: 0.6), .quit)
 
         recovery = DialogCloseReadRecovery()
         session = CloseSession(behavior: .lastWindow, startedAt: 0)
-        XCTAssertTrue(recovery.shouldRetry(trigger: .dialogCancel, snapshot: unreliable, error: .cannotComplete))
-        session.discardConfirmationInterval()
+        XCTAssertTrue(recovery.prepareRetry(session: &session, bundleIdentifier: "com.apple.TextEdit",
+                                             trigger: .dialogCancel, snapshot: unreliable, error: .cannotComplete))
         XCTAssertEqual(session.evaluate(snapshot: empty, now: 3), .cancel(.expired))
     }
 
