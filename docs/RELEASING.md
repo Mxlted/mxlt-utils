@@ -47,3 +47,5 @@ hdiutil verify build/mxlt-utils-0.1.0-macos-arm64.dmg
 8. If those basic live checks, signing credentials, or required manual actions remain blocked, preserve all completed artifacts and prepare a **draft** with the exact remaining blocker. Never substitute an unsigned public release. Verify the release URL/status/assets afterward and retain local submission/artifact records.
 
 A release title, tag, bundle version, build number, source commit, and checksum must agree. Do not rebuild or edit the app after signing/stapling, or recalculate checksums before the final stapling changes. Future updates initially use the GitHub Releases link; no automatic updater is included.
+
+The bundle must declare `CFBundleSupportedPlatforms` as an array containing `MacOSX`. Without this marker, macOS can classify an arm64-only bundle as iOS even when its executable targets macOS. Check the installed candidate's platform in System Information (or `system_profiler SPApplicationsDataType -json`); signature and notarization checks alone do not catch this metadata error.

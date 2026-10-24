@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Declare the app's macOS platform explicitly so macOS identifies the Apple-silicon bundle correctly instead of classifying it as an iOS app.
+
 ## 0.3.6
 
 - Rename the CallQuits feature to **Quit on Close** throughout settings and the menu, keeping existing preferences and exceptions.

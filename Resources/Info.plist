@@ -18,6 +18,10 @@
 	<string>mxlt-utils</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>MacOSX</string>
+	</array>
 	<key>CFBundleShortVersionString</key>
 	<string>0.3.6</string>
 	<key>CFBundleVersion</key>
