@@ -223,7 +223,7 @@ final class QuitModel: ObservableObject {
     func addException() {
         let panel = NSOpenPanel()
         panel.title = "Keep an application running"
-        panel.message = "CallQuits will leave this app's close buttons alone."
+        panel.message = "Quit on Close will leave this app running."
         panel.prompt = "Add exception"
         panel.allowedContentTypes = [.applicationBundle]
         panel.canChooseDirectories = false

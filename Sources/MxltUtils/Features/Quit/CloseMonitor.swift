@@ -17,14 +17,24 @@ struct TapRecovery {
 }
 
 /// Keep cancellation routing and subscription in sync. Secondary and auxiliary mouse presses
-/// supersede a pending close just like typing; they can never start a close-button gesture.
+/// supersede a pending close just like typing. Only button 2 can begin native tab proof.
 enum CloseMonitorInput {
     private static let interruptions: [CGEventType] = [.keyDown, .rightMouseDown, .otherMouseDown]
-    static let eventMask = ([CGEventType.leftMouseDown, .leftMouseUp, .leftMouseDragged] + interruptions)
+    static let eventMask = ([CGEventType.leftMouseDown, .leftMouseUp, .leftMouseDragged,
+                            .otherMouseUp, .otherMouseDragged] + interruptions)
         .reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
     static let localMask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown]
 
     static func interrupts(_ type: CGEventType) -> Bool { interruptions.contains(type) }
+
+    static func pointerButton(_ type: CGEventType, event: CGEvent) -> Int? {
+        switch type {
+        case .leftMouseDown, .leftMouseUp, .leftMouseDragged: return 0
+        case .otherMouseDown, .otherMouseUp, .otherMouseDragged:
+            return event.getIntegerValueField(.mouseEventButtonNumber) == 2 ? 2 : nil
+        default: return nil
+        }
+    }
 
     // Shared with the middle-scroll integration. Replayed input is never new close intent.
     static let syntheticEventMarker: Int64 = 0x4D584C54
@@ -49,6 +59,7 @@ final class CloseMonitor {
     private var generation: UInt64 = 0
     private var gesture: CloseGesture?
     private var pressIdentity: EventIdentity?
+    private var pressedButton: Int?
     private var releasePending = false
     private var applicationVisibility: CloseApplicationVisibility?
     private var attemptApplication: NSRunningApplication?
@@ -148,6 +159,8 @@ final class CloseMonitor {
                     monitor.resumeAfterTimeout()
                 } else if type == .keyDown {
                     monitor.handleKeyDown(event)
+                } else if CloseMonitorInput.pointerButton(type, event: event) == 2 {
+                    monitor.handle(type, event: event)
                 } else if CloseMonitorInput.interrupts(type) {
                     // Only the existence of an intervening press matters. Never inspect
                     // its contents or recipient; idle typing and secondary clicks do no work.
@@ -219,6 +232,7 @@ final class CloseMonitor {
         generation &+= 1
         gesture = nil
         pressIdentity = nil
+        pressedButton = nil
         releasePending = false
         applicationVisibility = nil
         attemptApplication = nil
@@ -247,6 +261,28 @@ final class CloseMonitor {
     /// The passive quit tap might otherwise never receive that original event.
     func cancelForAuxiliaryInput() {
         interruptPendingClose()
+    }
+
+    /// The scroll filter forwards the original down before suppressing it. Its generation
+    /// receipt is completed only after that exact short-click pair has actually been posted.
+    /// Synthetic event tags remain ignored by the passive tap.
+    func beginInterceptedMiddleClick(_ event: CGEvent) -> UInt64? {
+        guard !CloseMonitorInput.isSynthetic(event), event.type == .otherMouseDown,
+              CloseMonitorInput.pointerButton(event.type, event: event) == 2 else { return nil }
+        handle(.otherMouseDown, event: event)
+        return gesture == nil ? nil : generation
+    }
+
+    func finishInterceptedMiddleClick(_ token: UInt64, release: CGEvent?) {
+        guard token == generation else { return }
+        guard let release, !CloseMonitorInput.isSynthetic(release), release.type == .otherMouseUp,
+              CloseMonitorInput.pointerButton(release.type, event: release) == 2 else { invalidate(); return }
+        handle(.otherMouseUp, event: release)
+    }
+
+    func moveInterceptedMiddleClick(_ token: UInt64, to point: CGPoint) {
+        guard token == generation, let gesture else { return }
+        if !gesture.allowsDrag(toX: point.x, y: point.y) { invalidate() }
     }
 
     private func interruptPendingClose() {
@@ -414,6 +450,7 @@ final class CloseMonitor {
     }
 
     private func handle(_ type: CGEventType, event: CGEvent) {
+        guard let button = CloseMonitorInput.pointerButton(type, event: event) else { return }
         // CGEvent already uses the same top-left global display coordinates as Accessibility.
         let point = event.location
         let timestamp = TimeInterval(event.timestamp) / 1_000_000_000
@@ -422,26 +459,35 @@ final class CloseMonitor {
         let eventWindow = handlerWindow > 0 ? handlerWindow : event.getIntegerValueField(.mouseEventWindowUnderMousePointer)
         let modifiers = event.flags.intersection([.maskShift, .maskAlternate, .maskCommand, .maskControl])
         let intent: CloseGestureModifiers = modifiers.isEmpty ? .normal :
-            (modifiers == .maskShift && model.forceQuitEnabled ? .force : .bypass)
+            (button == 0 && modifiers == .maskShift && model.forceQuitEnabled ? .force : .bypass)
         switch type {
-        case .leftMouseDown:
+        case .leftMouseDown, .otherMouseDown:
             invalidate()
-            guard let identity = EventIdentity(nativeProcessID: targetValue, eventWindowID: eventWindow,
+            guard button == 0 || model.additionalCloseMethods,
+                  let identity = EventIdentity(nativeProcessID: targetValue, eventWindowID: eventWindow,
                                                windowOwnerProcessID: windowOwner(eventWindow)),
                   let app = NSRunningApplication(processIdentifier: identity.processID),
                   isEligible(app) else { return }
             pressIdentity = identity
+            pressedButton = button
             gesture = CloseGesture(x: point.x, y: point.y, timestamp: timestamp,
                                    targetProcessID: identity.processID, modifiers: intent)
             guard gesture != nil else { return }
             applicationVisibility = CloseApplicationVisibility(identity: identity, bundleIdentifier: app.bundleIdentifier)
             attemptApplication = app
             worker.mouseDown(point: point, eventTime: timestamp, targetPID: identity.processID, generation: generation,
-                             includingTabs: model.additionalCloseMethods && intent == .normal)
-        case .leftMouseDragged:
+                             includingTabs: model.additionalCloseMethods && intent == .normal,
+                             middleClick: button == 2, includingDialogCancel: button == 0 && intent == .normal)
+            let token = generation
+            DispatchQueue.main.asyncAfter(deadline: .now() + CloseGesture.maximumDuration) { [weak self] in
+                guard let self, token == self.generation, self.gesture != nil else { return }
+                self.invalidate()
+            }
+        case .leftMouseDragged, .otherMouseDragged:
+            guard pressedButton == button else { invalidate(); return }
             if let gesture, !gesture.allowsDrag(toX: point.x, y: point.y) { invalidate() }
-        case .leftMouseUp:
-            guard let identity = pressIdentity,
+        case .leftMouseUp, .otherMouseUp:
+            guard pressedButton == button, let identity = pressIdentity,
                   identity.matchesRelease(nativeProcessID: targetValue, eventWindowID: eventWindow,
                                           windowOwnerProcessID: windowOwner(eventWindow)),
                   let action = gesture?.actionOnRelease(x: point.x, y: point.y, timestamp: timestamp,
@@ -449,8 +495,9 @@ final class CloseMonitor {
             else { invalidate(); return }
             gesture = nil
             pressIdentity = nil
+            pressedButton = nil
             let force = action == .force
-            applicationVisibility?.recordMatchedRelease(at: timestamp, permitsHiddenClose: !force)
+            applicationVisibility?.recordMatchedRelease(at: timestamp, permitsHiddenClose: !force && button == 0)
             let token = generation
             let validUntil = timestamp + (force ? 0.8 : CloseSession.maximumDuration)
             releasePending = true
@@ -632,11 +679,14 @@ private final class CloseWorker {
         queue.async { self.generation = generation; self.down = nil }
     }
 
-    func mouseDown(point: CGPoint, eventTime: TimeInterval, targetPID: pid_t, generation: UInt64, includingTabs: Bool) {
+    func mouseDown(point: CGPoint, eventTime: TimeInterval, targetPID: pid_t, generation: UInt64,
+                   includingTabs: Bool, middleClick: Bool, includingDialogCancel: Bool) {
         queue.async {
             guard self.generation == generation else { return }
             self.downTime = eventTime
-            self.down = self.client.closeButton(at: point, eventTime: eventTime, targetPID: targetPID, includingTabs: includingTabs)
+            self.down = self.client.closeButton(at: point, eventTime: eventTime, targetPID: targetPID,
+                                                includingTabs: includingTabs, middleClick: middleClick,
+                                                includingDialogCancel: includingDialogCancel)
         }
     }
 

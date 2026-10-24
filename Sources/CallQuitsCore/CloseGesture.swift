@@ -4,7 +4,7 @@ import Foundation
 /// Tabs and shortcuts may close only part of a window. They never inherit the
 /// red button's any-window or force-quit behavior.
 public enum CloseTrigger: Sendable {
-    case windowButton, tabButton, keyboardShortcut
+    case windowButton, tabButton, middleClickTab, dialogCancel, keyboardShortcut
 
     public func behavior(configured: CloseBehavior) -> CloseBehavior {
         self == .windowButton ? configured : .lastWindow

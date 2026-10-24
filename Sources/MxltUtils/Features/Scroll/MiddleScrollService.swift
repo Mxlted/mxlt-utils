@@ -8,6 +8,9 @@ import QuartzCore
 final class MiddleScrollService {
     static let syntheticEventTag = MiddleScrollEventRouting.syntheticTag
     var onAuxiliaryPress: (() -> Void)?
+    var onMiddleClickBegan: ((CGEvent) -> UInt64?)?
+    var onMiddleClickFinished: ((UInt64, CGEvent?) -> Void)?
+    var onMiddleClickMoved: ((UInt64, CGPoint) -> Void)?
     var onFailure: (() -> Void)?
     private(set) var inputAccessUnavailable = false
 
@@ -25,6 +28,7 @@ final class MiddleScrollService {
     private var retryUsed = false
     private var gesture = ScrollGesture()
     private var sequence: MiddleScrollSequence?
+    private var middleClickToken: UInt64?
     private var target: MiddleScrollTarget?
     private var generation: UInt64 = 0
     private var validationWork: DispatchWorkItem?
@@ -171,6 +175,7 @@ final class MiddleScrollService {
     }
 
     private func cancel(reason: String) {
+        discardMiddleClick()
         if sequence != nil, gesture.phase != .cancelled { debugLog("cancel: \(reason)") }
         generation &+= 1
         cancelValidationWork()
@@ -220,6 +225,7 @@ final class MiddleScrollService {
             return false
         }
         if type == .otherMouseDown {
+            discardMiddleClick()
             onAuxiliaryPress?() // Must run before suppression, independently of target validation.
             // Even an excluded or otherwise uncaptured press supersedes an older queued click.
             if sequence == nil { generation &+= 1; cancelValidationWork() }
@@ -243,6 +249,7 @@ final class MiddleScrollService {
             debugStaleValidationReported = false
 #endif
             self.sequence = sequence
+            middleClickToken = onMiddleClickBegan?(event)
             missingReleaseSince = nil
             target = nil
             generation &+= 1
@@ -298,7 +305,7 @@ final class MiddleScrollService {
                     self.validationWork = work
                     self.worker.async(execute: work)
                 }
-            }
+            } else { discardMiddleClick() }
             removeTapIfIdle()
             return true
         }
@@ -306,9 +313,11 @@ final class MiddleScrollService {
     }
 
     private func updatePointer(_ point: CGPoint) {
+        if let token = middleClickToken { onMiddleClickMoved?(token, point) }
         let activated = gesture.move(to: ScrollPoint(x: point.x, y: point.y))
         if activated || gesture.velocity == .zero { frameClock.reset() }
         guard activated, let sequence else { return }
+        discardMiddleClick()
         debugLog("gesture activated")
         let token = generation
         DispatchQueue.main.async { [weak self] in
@@ -472,6 +481,7 @@ final class MiddleScrollService {
     }
 
     private func replay(down: CGEvent, up: CGEvent, target: MiddleScrollTarget) {
+        defer { discardMiddleClick() }
         guard permissionWatchdog?.allowsInput == true, AXIsProcessTrusted() else { permissionLost(); return }
         guard let replayedDown = MiddleScrollEventRouting.replayEvent(down, template: down, processID: target.processID,
                                                             windowID: target.windowID, anchor: target.anchor),
@@ -483,10 +493,21 @@ final class MiddleScrollService {
             replayedUp.postToPid(target.processID)
             return true
         }) == true else { return }
+        if let token = middleClickToken {
+            middleClickToken = nil
+            onMiddleClickFinished?(token, up)
+        }
         debugLog("replay pair posted")
     }
 
+    private func discardMiddleClick() {
+        guard let token = middleClickToken else { return }
+        middleClickToken = nil
+        onMiddleClickFinished?(token, nil)
+    }
+
     private func finishSequence() {
+        discardMiddleClick()
         generation &+= 1
         sequence = nil
         missingReleaseSince = nil

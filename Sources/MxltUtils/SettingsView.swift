@@ -4,7 +4,7 @@ import MxltCore
 import SwiftUI
 
 private enum SettingsSection: String, CaseIterable, Identifiable {
-    case general = "General", quit = "CallQuits", scroll = "Middle scrolling", activity = "Activity"
+    case general = "General", quit = "Quit on Close", scroll = "Middle scrolling", activity = "Activity"
     var id: String { rawValue }
     var icon: String {
         switch self { case .general: "slider.horizontal.3"; case .quit: "xmark.circle"; case .scroll: "computermouse"; case .activity: "clock" }
@@ -65,7 +65,7 @@ private struct GeneralPane: View {
         Text("A few useful changes to how your Mac feels. Enable each one when you need it.").foregroundStyle(.secondary)
         GroupBox {
             VStack(alignment: .leading, spacing: 14) {
-                Toggle("CallQuits", isOn: $quit.enabled)
+                Toggle("Quit on Close", isOn: $quit.enabled)
                 Text("Quit an app after its last window closes.").font(.caption).foregroundStyle(.secondary)
                 Divider()
                 Toggle("Middle scrolling", isOn: $scroll.enabled)
@@ -77,7 +77,7 @@ private struct GeneralPane: View {
                 Label(quit.accessibilityGranted && !model.inputAccessNeedsRetry ? "Accessibility allowed" : "Accessibility access",
                       systemImage: quit.accessibilityGranted && !model.inputAccessNeedsRetry ? "checkmark.shield" : "hand.raised")
                     .font(.headline)
-                Text("CallQuits checks close controls and windows. Middle scrolling turns a held mouse button into scrolling. Your input stays on this Mac.")
+                Text("Quit on Close checks close controls and windows. Middle scrolling turns a held mouse button into scrolling. Your input stays on this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
                 if model.inputAccessNeedsRetry {
                     Text("Input access is unavailable. Restore Accessibility access in System Settings, then retry monitoring.")
@@ -109,7 +109,7 @@ private struct QuitPane: View {
     @ObservedObject var model: QuitModel
     @State private var confirmForce = false
     var body: some View {
-        Toggle("Enable CallQuits", isOn: $model.enabled).font(.headline)
+        Toggle("Enable Quit on Close", isOn: $model.enabled).font(.headline)
         Text(model.enabled ? (model.suspended ? "Paused" : model.statusMessage) : "Off").font(.caption).foregroundStyle(.secondary)
         VStack(alignment: .leading, spacing: 6) {
             Text("After clicking the red close button")
@@ -118,8 +118,9 @@ private struct QuitPane: View {
                 Text("Quit after any window").tag(CloseBehavior.everyWindow)
             }.pickerStyle(.menu).labelsHidden()
         }
-        Toggle("Include Command-W and tab close buttons", isOn: $model.additionalCloseMethods)
-        Text("These always require the last window to close and request a normal quit. A remaining tab or window keeps the app open.").font(.caption).foregroundStyle(.secondary)
+        Toggle("Include ⌘W and tab closing", isOn: $model.additionalCloseMethods)
+        Text("Close a supported tab with its × button or a middle click. These methods quit only after the last window closes; remaining tabs or windows keep the app open.").font(.caption).foregroundStyle(.secondary)
+        Text("Clicking Cancel in an app’s last standalone dialog, such as TextEdit’s opening file chooser, also quits the app after the dialog closes.").font(.caption).foregroundStyle(.secondary)
         Toggle("Allow Shift-click to force quit", isOn: Binding(get: { model.forceQuitEnabled }, set: { if $0 { confirmForce = true } else { model.forceQuitEnabled = false } }))
             .alert("Allow force quit?", isPresented: $confirmForce) {
                 Button("Cancel", role: .cancel) {}

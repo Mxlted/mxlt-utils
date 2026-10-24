@@ -13,6 +13,20 @@ The tests use isolated preferences and pure decision logic where possible. Acces
 
 Coverage includes close eligibility and native identity, down/up movement, shortcut gating, force protections, sheets/save cancellation, remaining/replacement windows, Discord's narrow hidden-close policy, bounded AX recovery, settings/permission transitions, scroll velocity/transitions, click replay, synthetic tagging, pinned-window validation, and independent session suspension.
 
+## Unreleased Quit on Close changes
+
+The full suite passes 200 XCTest cases: 64 quit-policy, 37 scroll/session-policy, and 99 native-adapter/settings cases. New injected Accessibility fixtures cover direct and Chromium sibling tab-body hits, native ancestry and actual close-control proof, wrong recipients, web tabs, disabled controls, remaining windows, save sheets, and a remote dialog's official Cancel button. Dialog confirmation waits for disappearance and stable empty snapshots; staying dialogs, replacements, and unreadable state cannot quit. Red-button regression tests run with Cancel recognition enabled. Input tests construct events without posting them and check middle-button-only routing and rejection of replay tags. Both new triggers are tested against force quit and any-window policy. Existing preference keys and settings are retained.
+
+These are unit/adapter checks, not running TextEdit or browser evidence. No app launch, input posting, Accessibility change, or installation was performed for this work. The old settings screenshot still depicts v0.3.5; the new name has not been visually inspected in a running app.
+
+Manual checks for the preview, using disposable documents and browser profiles:
+
+- Launch TextEdit into its file chooser with no documents open, then click Cancel: the chooser should disappear and the app should quit. Repeat with another document open, including minimized/on another Space: the app must remain running. Cancel a save sheet on an unsaved disposable document: it must remain open.
+- Middle-click a supported browser's last tab: quit only if the native window closes and no other windows remain. Repeat with another tab/window open, with Middle scrolling on and off, and with the browser excluded from scrolling. Apps that keep an empty window after closing their last tab stay running.
+- Check that middle-click links/bookmarks still work, held scrolling never quits, and dragging away then returning, Escape, pause/disable, permission loss, or a new input cannot complete an older close attempt. Existing exceptions apply to every path.
+
+Implementation references: Apple's [Cancel-button attribute](https://developer.apple.com/documentation/applicationservices/kaxcancelbuttonattribute), [dialog subrole](https://developer.apple.com/documentation/applicationservices/kaxdialogsubrole), and [NSOpenPanel](https://developer.apple.com/documentation/appkit/nsopenpanel) documentation, also queried through Context7. Remote hosting alone never supplies application identity; exact recipient membership is required. Unknown Accessibility layouts are unsupported until verified.
+
 ## Running-app checks
 
 ### 0.3.5 Accessibility revocation hardening

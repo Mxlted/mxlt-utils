@@ -219,7 +219,7 @@ final class QuitModelTests: XCTestCase {
         XCTAssertTrue(recovery.shouldRetry(enabled: true, trusted: true), "a new tap resets recovery")
     }
 
-    func testSecondaryAndAuxiliaryPressesSubscribeAndCancelWithoutBecomingCloseGestures() {
+    func testSecondaryAndAuxiliaryPressesSubscribeAndCancelBeforeNewIntent() {
         for type in [CGEventType.keyDown, .rightMouseDown, .otherMouseDown] {
             XCTAssertNotEqual(CloseMonitorInput.eventMask & (CGEventMask(1) << type.rawValue), 0,
                               "the native tap must receive interruption \(type)")
@@ -228,14 +228,30 @@ final class QuitModelTests: XCTestCase {
         for mask in [NSEvent.EventTypeMask.keyDown, .rightMouseDown, .otherMouseDown, .leftMouseDown] {
             XCTAssertTrue(CloseMonitorInput.localMask.contains(mask), "interaction with CallQuits also cancels")
         }
-        for type in [CGEventType.leftMouseDown, .leftMouseUp, .leftMouseDragged] {
+        for type in [CGEventType.leftMouseDown, .leftMouseUp, .leftMouseDragged, .otherMouseUp, .otherMouseDragged] {
             XCTAssertNotEqual(CloseMonitorInput.eventMask & (CGEventMask(1) << type.rawValue), 0)
             XCTAssertFalse(CloseMonitorInput.interrupts(type), "native left gesture keeps its own validation")
         }
-        for type in [CGEventType.mouseMoved, .flagsChanged, .rightMouseUp, .otherMouseUp] {
+        for type in [CGEventType.mouseMoved, .flagsChanged, .rightMouseUp] {
             XCTAssertEqual(CloseMonitorInput.eventMask & (CGEventMask(1) << type.rawValue), 0,
                            "do not introduce extra input collection")
             XCTAssertFalse(CloseMonitorInput.interrupts(type))
         }
+    }
+
+    func testOnlyMiddleAuxiliaryButtonCanEnterTabCaptureAndReplayStaysIgnored() throws {
+        let event = try XCTUnwrap(CGEvent(mouseEventSource: nil, mouseType: .otherMouseDown,
+                                         mouseCursorPosition: .zero, mouseButton: .center))
+        for button in [1, 2, 3, 4, 31] {
+            event.setIntegerValueField(.mouseEventButtonNumber, value: Int64(button))
+            for type in [CGEventType.otherMouseDown, .otherMouseUp, .otherMouseDragged] {
+                XCTAssertEqual(CloseMonitorInput.pointerButton(type, event: event), button == 2 ? 2 : nil)
+            }
+        }
+        event.setIntegerValueField(.eventSourceUserData, value: CloseMonitorInput.syntheticEventMarker)
+        for type in [CGEventType.otherMouseDown, .otherMouseUp, .otherMouseDragged] {
+            XCTAssertTrue(CloseMonitorInput.shouldIgnore(type, event: event))
+        }
+        XCTAssertNil(CloseMonitorInput.pointerButton(.rightMouseDown, event: event))
     }
 }

@@ -56,9 +56,12 @@ final class AccessibilityClient {
         AXUIElementSetMessagingTimeout(system, 0.12)
     }
 
-    func closeButton(at point: CGPoint, eventTime: TimeInterval, targetPID: pid_t, includingTabs: Bool = false) -> Hit? {
+    func closeButton(at point: CGPoint, eventTime: TimeInterval, targetPID: pid_t, includingTabs: Bool = false,
+                     middleClick: Bool = false, includingDialogCancel: Bool = false) -> Hit? {
         guard let app = NSRunningApplication(processIdentifier: targetPID), isEligible(app),
-              let control = captureCloseControl(at: point, eventTime: eventTime, targetPID: targetPID, includingTabs: includingTabs)
+              let control = captureCloseControl(at: point, eventTime: eventTime, targetPID: targetPID,
+                                                includingTabs: includingTabs, middleClick: middleClick,
+                                                includingDialogCancel: includingDialogCancel)
         else { return nil }
         // The monitor rechecks eligibility after release and immediately before termination.
         // Let it adjudicate a same-process Discord hide that arrives while capture finishes.
@@ -78,12 +81,20 @@ final class AccessibilityClient {
     }
 
     func captureCloseControl(at point: CGPoint, eventTime: TimeInterval, targetPID: pid_t,
-                             includingTabs: Bool = false) -> CloseControl? {
+                             includingTabs: Bool = false, middleClick: Bool = false,
+                             includingDialogCancel: Bool = false) -> CloseControl? {
         deadline = ProcessInfo.processInfo.systemUptime + 0.55
-        guard ProcessInfo.processInfo.systemUptime - eventTime < 0.5 else { return nil }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard targetPID > 1, eventTime.isFinite, eventTime >= 0, now >= eventTime,
+              now - eventTime < 0.5, !middleClick || includingTabs else { return nil }
         do {
             let (error, result) = findElement(system, point)
             guard error == .success, var button = result else { return nil }
+            if middleClick {
+                return try middleTabControl(hit: button, at: point, targetPID: targetPID)
+            }
+            if includingDialogCancel,
+               let control = try dialogCancelControl(hit: button, at: point, targetPID: targetPID) { return control }
             var verifiedTabButton = false
             // Some apps expose a child of the actual button to hit testing.
             for depth in 0...4 {
@@ -141,22 +152,9 @@ final class AccessibilityClient {
     /// from an X glyph, screen position, a web page button, or a tab's title.
     private func isTabCloseButton(_ button: AXUIElement) throws -> Bool {
         guard try string(button, kAXRoleAttribute) == kAXButtonRole,
-              let tab = try element(button, kAXParentAttribute),
-              try string(tab, kAXRoleAttribute) == kAXRadioButtonRole,
-              let group = try element(tab, kAXParentAttribute),
-              try string(group, kAXRoleAttribute) == kAXTabGroupRole else { return false }
-        // Web pages can expose their own tab groups. Only native window chrome qualifies.
+              let tab = try element(button, kAXParentAttribute) else { return false }
         guard let window = try element(button, kAXWindowAttribute) else { return false }
-        var ancestor = group
-        var reachedWindow = false
-        for _ in 0..<8 {
-            guard let parent = try element(ancestor, kAXParentAttribute) else { return false }
-            if CFEqual(parent, window) { reachedWindow = true; break }
-            guard let role = try string(parent, kAXRoleAttribute),
-                  [kAXGroupRole, kAXToolbarRole, kAXScrollAreaRole].contains(role) else { return false }
-            ancestor = parent
-        }
-        guard reachedWindow else { return false }
+        guard try isNativeTab(tab, in: window) else { return false }
         if let raw = try value(tab, kAXCloseButtonAttribute, optional: true) {
             guard let official = axElement(raw) else { return false }
             return CFEqual(official, button)
@@ -170,11 +168,28 @@ final class AccessibilityClient {
         return false
     }
 
+    private func isNativeTab(_ tab: AXUIElement, in window: AXUIElement) throws -> Bool {
+        guard try string(tab, kAXRoleAttribute) == kAXRadioButtonRole,
+              let group = try element(tab, kAXParentAttribute),
+              try string(group, kAXRoleAttribute) == kAXTabGroupRole else { return false }
+        // Web pages can expose their own tab groups. Only native window chrome qualifies.
+        var ancestor = group
+        var reachedWindow = false
+        for _ in 0..<8 {
+            guard let parent = try element(ancestor, kAXParentAttribute) else { return false }
+            if CFEqual(parent, window) { reachedWindow = true; break }
+            guard let role = try string(parent, kAXRoleAttribute),
+                  [kAXGroupRole, kAXToolbarRole, kAXScrollAreaRole].contains(role) else { return false }
+            ancestor = parent
+        }
+        return reachedWindow
+    }
+
     /// Chromium can hit-test a leaf rendering group beside its accessible tab group.
     /// Resolve only that immediate sibling relationship, using the real close control's
     /// AX frame and native ancestry. Never search the window or infer a control from an X.
     private func tabCloseButton(inHitContainer hit: AXUIElement, at point: CGPoint,
-                                targetPID: pid_t) throws -> AXUIElement? {
+                                targetPID: pid_t, middleClick: Bool = false) throws -> AXUIElement? {
         guard try string(hit, kAXRoleAttribute) == kAXGroupRole,
               let parent = try element(hit, kAXParentAttribute),
               try string(parent, kAXRoleAttribute) == kAXGroupRole,
@@ -208,13 +223,80 @@ final class AccessibilityClient {
         else { return nil }
         let buttons = try children(tab).filter {
             guard let role = try string($0, kAXRoleAttribute) else { throw ReadError.unexpectedValue }
-            return try role == kAXButtonRole && controlFrame($0).contains(point)
+            return try role == kAXButtonRole && (middleClick || controlFrame($0).contains(point))
         }
         guard buttons.count == 1, let button = buttons.first,
               let buttonParent = try element(button, kAXParentAttribute), CFEqual(buttonParent, tab),
               let buttonWindow = try element(button, kAXWindowAttribute), CFEqual(buttonWindow, window),
               try isTabCloseButton(button) else { return nil }
-        return button
+        return middleClick ? tab : button
+    }
+
+    private func middleTabControl(hit: AXUIElement, at point: CGPoint, targetPID: pid_t) throws -> CloseControl? {
+        var tab = hit
+        if let resolved = try tabCloseButton(inHitContainer: hit, at: point, targetPID: targetPID, middleClick: true) {
+            tab = resolved
+        }
+        for depth in 0...4 {
+            if try string(tab, kAXRoleAttribute) == kAXRadioButtonRole { break }
+            guard depth < 4, let parent = try element(tab, kAXParentAttribute) else { return nil }
+            tab = parent
+        }
+        guard let window = try element(tab, kAXWindowAttribute), try isNativeTab(tab, in: window) else { return nil }
+        var owner: pid_t = 0
+        guard AXUIElementGetPid(window, &owner) == .success, owner == targetPID else { return nil }
+        let app = AXUIElementCreateApplication(targetPID)
+        let initial = try windows(app)
+        guard initial.contains(where: { CFEqual($0, window) }) else { return nil }
+        let attributes = try values(window, [kAXRoleAttribute, kAXSubroleAttribute, kAXModalAttribute,
+                                             kAXChildrenAttribute, kAXMinimizedAttribute])
+        guard attributes[0] as? String == kAXWindowRole, attributes[1] as? String == kAXStandardWindowSubrole,
+              try !boolean(attributes[2]), try !hasSheet(attributes[3]), try !boolean(attributes[4]),
+              try bool(tab, kAXEnabledAttribute) == true else { return nil }
+        // Require a real close control as well as native tab ancestry. Segmented controls
+        // and nonclosable native tabs do not establish close intent.
+        let controls = try children(tab).filter {
+            guard let role = try string($0, kAXRoleAttribute) else { throw ReadError.unexpectedValue }
+            return role == kAXButtonRole
+        }
+        let closeControls = try controls.filter { try isTabCloseButton($0) }
+        guard closeControls.count == 1, let close = closeControls.first,
+              let closeParent = try element(close, kAXParentAttribute), CFEqual(closeParent, tab),
+              let closeWindow = try element(close, kAXWindowAttribute), CFEqual(closeWindow, window),
+              try bool(close, kAXEnabledAttribute) == true else { return nil }
+        let frame = try controlFrame(tab)
+        guard frame.contains(point) else { return nil }
+        return CloseControl(appElement: app, window: window, initialWindows: initial,
+                            buttonFrame: frame, trigger: .middleClickTab)
+    }
+
+    /// A verified Cancel on the sole standalone dialog can finish an otherwise windowless
+    /// app (for example TextEdit's startup chooser). Never infer this from the button label.
+    private func dialogCancelControl(hit: AXUIElement, at point: CGPoint, targetPID: pid_t) throws -> CloseControl? {
+        var button = hit
+        for depth in 0...4 {
+            if try string(button, kAXRoleAttribute) == kAXButtonRole { break }
+            guard depth < 4, let parent = try element(button, kAXParentAttribute) else { return nil }
+            button = parent
+        }
+        guard let window = try element(button, kAXWindowAttribute),
+              try value(window, kAXSubroleAttribute, optional: true) as? String == kAXDialogSubrole else { return nil }
+        // Remote open-panel controls may have a different PID. Exact membership in the
+        // native recipient's AXWindows and its official AXCancelButton establish ownership.
+        let app = AXUIElementCreateApplication(targetPID)
+        let initial = try windows(app)
+        guard initial.count == 1, CFEqual(initial[0], window),
+              try string(window, kAXRoleAttribute) == kAXWindowRole,
+              try value(window, kAXDocumentAttribute, optional: true) == nil,
+              try bool(window, kAXMinimizedAttribute) == false,
+              try bool(window, kAXModalAttribute) != nil,
+              let children = try value(window, kAXChildrenAttribute), try !hasSheet(children),
+              let official = try element(window, kAXCancelButtonAttribute), CFEqual(official, button) else { return nil }
+        let attributes = try values(button, [kAXRoleAttribute, kAXEnabledAttribute, kAXPositionAttribute, kAXSizeAttribute])
+        guard attributes[0] as? String == kAXButtonRole, try boolean(attributes[1]),
+              let frame = frame(position: attributes[2], size: attributes[3]), frame.contains(point) else { return nil }
+        return CloseControl(appElement: app, window: window, initialWindows: initial,
+                            buttonFrame: frame, trigger: .dialogCancel)
     }
 
     private func children(_ object: AXUIElement) throws -> [AXUIElement] {
@@ -267,7 +349,9 @@ final class AccessibilityClient {
             // Inspect sheets/modal state only while windows exist; empty is not guessed on AX errors.
             for window in current {
                 do {
-                    if try hasBlockingUI(window) { blocking = true; break }
+                    if try hasBlockingUI(window, cancellingDialog: hit.trigger == .dialogCancel && CFEqual(window, hit.window)) {
+                        blocking = true; break
+                    }
                 } catch ReadError.unavailable(.invalidUIElement) where CFEqual(window, hit.window) {
                     // Native close can destroy the clicked window (or a child) after AXWindows
                     // enumerates it. Confirm that exact disappearance, rather than treating a
@@ -383,9 +467,9 @@ final class AccessibilityClient {
         return members.map { $0 as! AXUIElement }
     }
 
-    private func hasBlockingUI(_ window: AXUIElement) throws -> Bool {
+    private func hasBlockingUI(_ window: AXUIElement, cancellingDialog: Bool = false) throws -> Bool {
         guard let modal = try bool(window, kAXModalAttribute) else { throw ReadError.unexpectedValue }
-        if modal { return true }
+        if modal && !cancellingDialog { return true }
         // Sheets are direct AX children of a window; there is no public AXSheets attribute.
         guard let raw = try value(window, kAXChildrenAttribute) else { throw ReadError.unexpectedValue }
         return try hasSheet(raw)

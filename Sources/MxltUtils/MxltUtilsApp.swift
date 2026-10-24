@@ -10,7 +10,7 @@ struct MxltUtilsApp: App {
             Text("mxlt-utils").font(.headline)
             Text(model.status)
             Divider()
-            Toggle("CallQuits", isOn: Binding(get: { model.quit.enabled }, set: { model.quit.enabled = $0 }))
+            Toggle("Quit on Close", isOn: Binding(get: { model.quit.enabled }, set: { model.quit.enabled = $0 }))
             Toggle("Middle scrolling", isOn: Binding(get: { model.scroll.enabled }, set: { model.scroll.enabled = $0 }))
             Divider()
             Toggle("Pause all features", isOn: $model.paused)

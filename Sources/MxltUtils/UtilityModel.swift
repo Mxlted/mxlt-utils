@@ -119,6 +119,13 @@ final class UtilityModel: ObservableObject {
         quit.objectWillChange.sink { [weak self] _ in self?.queueUpdate() }.store(in: &subscriptions)
         scroll.objectWillChange.sink { [weak self] _ in self?.queueUpdate() }.store(in: &subscriptions)
         scrollService.onAuxiliaryPress = { [weak self] in self?.quitMonitor.cancelForAuxiliaryInput() }
+        scrollService.onMiddleClickBegan = { [weak self] in self?.quitMonitor.beginInterceptedMiddleClick($0) }
+        scrollService.onMiddleClickFinished = { [weak self] token, release in
+            self?.quitMonitor.finishInterceptedMiddleClick(token, release: release)
+        }
+        scrollService.onMiddleClickMoved = { [weak self] token, point in
+            self?.quitMonitor.moveInterceptedMiddleClick(token, to: point)
+        }
         scrollService.onFailure = { [weak self] in
             guard let self else { return }
             self.quit.refreshPermission()

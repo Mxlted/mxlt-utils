@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/settings.png" width="640" alt="mxlt-utils settings in dark appearance, with independent CallQuits and Middle scrolling switches, Accessibility status, and an optional launch-at-login setting">
+  <img src="docs/images/settings.png" width="640" alt="mxlt-utils settings in dark appearance, with independent quit and Middle scrolling switches (v0.3.5 screenshot), Accessibility status, and an optional launch-at-login setting">
 </p>
 
 *Settings shown in an earlier preview; the current release includes the Fold icon.*
@@ -33,11 +33,13 @@ mxlt-utils brings everyday Mac conveniences together in one menu bar app. It gro
 
 ## Features
 
-Available today:
+The descriptions below reflect the current source. The Quit on Close name, dialog Cancel handling, and middle-click tab quitting are unreleased; the download above is v0.3.5.
+
+Available features:
 
 ### Close the window. Quit the app.
 
-**CallQuits** quits an app after you close its last window, so finished apps don't linger in the Dock. Use the red close button, or enable support for **⌘W** and supported native tab-close buttons.
+**Quit on Close** quits an app after you close its last window, so finished apps don't linger in the Dock. Use the red close button, or enable support for **⌘W** and supported native tab closing, including middle-clicking a tab.
 
 - **Keep the apps you need.** Choose exceptions for music, messaging, terminals, and anything else you want running.
 - **Respect unfinished work.** Save prompts, canceled closes, and replacement windows prevent automatic quitting. If window state is unclear, the app stays open.
@@ -74,7 +76,7 @@ The app and DMG are Developer ID signed and notarized. Download checksums are in
 
 **No account. No telemetry. No application network requests.** Everything the app does stays on your Mac. Opening the Releases link launches your browser only when you click it.
 
-Accessibility lets CallQuits check close buttons and windows, and lets middle scrolling respond to the held mouse button. Access is requested when a feature needs it. The Activity view keeps a small, temporary history of status changes; it does not record document names, document contents, keystrokes, or raw input.
+Accessibility lets Quit on Close check close buttons and windows, and lets middle scrolling respond to the held mouse button. Access is requested when a feature needs it. The Activity view keeps a small, temporary history of status changes; it does not record document names, document contents, keystrokes, or raw input.
 
 ## Questions & troubleshooting
 
@@ -83,7 +85,7 @@ Accessibility lets CallQuits check close buttons and windows, and lets middle sc
 
 Check that the feature is enabled, **Pause all features** is off, and Accessibility access is allowed. Click **Check again** after granting access. If access is allowed but monitoring hasn't started, click **Retry monitoring**.
 
-After replacing a development build, you may need to remove the old Accessibility entry, add the copy in Applications, and relaunch. **Quit mxlt-utils before removing or replacing its Accessibility entry.** Avoid running another quit monitor alongside CallQuits or another scroll remapper while troubleshooting middle scrolling.
+After replacing a development build, you may need to remove the old Accessibility entry, add the copy in Applications, and relaunch. **Quit mxlt-utils before removing or replacing its Accessibility entry.** Avoid running another quit monitor alongside Quit on Close or another scroll remapper while troubleshooting middle scrolling.
 
 </details>
 
@@ -99,16 +101,18 @@ Version 0.3.5 checks whether input access still works when an enabled Accessibil
 <details>
 <summary><strong>How do I keep a particular app running or preserve its middle-drag controls?</strong></summary>
 
-Add it under **CallQuits → Keep these apps running** or **Middle scrolling → Leave middle-drag unchanged**. Music, Spotify, Mail, Messages, FaceTime, Terminal, and iTerm start as editable quit exceptions. Finder, system processes, and mxlt-utils are always protected.
+Add it under **Quit on Close → Keep these apps running** or **Middle scrolling → Leave middle-drag unchanged**. Music, Spotify, Mail, Messages, FaceTime, Terminal, and iTerm start as editable quit exceptions. Finder, system processes, and mxlt-utils are always protected.
 
 </details>
 
 <details>
 <summary><strong>What should I know about close behavior?</strong></summary>
 
-CallQuits requires a supported, verified close action. It never quits an app just because no windows are visible. Minimized windows and windows on other Spaces count when macOS makes them available to Accessibility; unreadable state prevents quitting. Apps with unusual window controls may not support every close method.
+Quit on Close requires a supported, verified close action. It never quits an app just because no windows are visible. Minimized windows and windows on other Spaces count when macOS makes them available to Accessibility; unreadable state prevents quitting. Apps with unusual window controls may not support every close method.
 
-**⌘W and tab-close buttons always require the last window to close and request a normal quit.** A remaining tab or window keeps the app running. Discord has a narrowly scoped exception for its verified hide-on-close behavior.
+**⌘W, tab-close buttons, and middle-clicking a supported tab always require the last window to close and request a normal quit.** A remaining tab or window keeps the app running. Discord has a narrowly scoped exception for its verified hide-on-close behavior.
+
+Clicking the verified Cancel button in an app’s only standalone dialog, such as TextEdit’s opening file chooser, also requests a normal quit after the dialog disappears. Existing document windows, save sheets, replacement windows, and unreadable state prevent this. Simply launching an app with no windows never triggers quit.
 
 Shift-click force quit is a separate, optional setting, off by default. It applies only to the red close button and can discard unsaved work.
 
@@ -128,7 +132,7 @@ Physical mouse, multi-display, and wider app coverage remain preview limitations
 <details>
 <summary><strong>Can I use this alongside standalone CallQuits?</strong></summary>
 
-Yes, if you use only middle scrolling in mxlt-utils. Run only one CallQuits monitor at a time. Each app has its own preferences, Accessibility permission, and launch-at-login setting; nothing is migrated automatically.
+Yes, if you use only middle scrolling in mxlt-utils. Run only one quit-on-close monitor at a time. Each app has its own preferences, Accessibility permission, and launch-at-login setting; nothing is migrated automatically.
 
 </details>
 

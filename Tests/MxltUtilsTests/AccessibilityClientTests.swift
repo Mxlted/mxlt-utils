@@ -333,6 +333,10 @@ final class CloseControlCaptureTests: XCTestCase {
                    !operations.contains("batch:button") {
                     return (.success, kAXCloseButtonSubrole as CFString)
                 }
+                if CFEqual(element, button), name == kAXRoleAttribute,
+                   !operations.contains("batch:button") { return (.success, buttonValues?[1]) }
+                if CFEqual(element, target), name == kAXSubroleAttribute,
+                   !operations.contains("batch:window") { return (.success, windowValues?[1]) }
                 if CFEqual(element, target), windowError == .notImplemented,
                    let index = windowAttributes.firstIndex(of: name) {
                     fallbackReads += 1
@@ -366,10 +370,11 @@ final class CloseControlCaptureTests: XCTestCase {
             })
         }
 
-        func capture(eventTime: TimeInterval? = nil, targetPID: pid_t? = nil) -> AccessibilityClient.CloseControl? {
+        func capture(eventTime: TimeInterval? = nil, targetPID: pid_t? = nil,
+                     includingDialogCancel: Bool = false) -> AccessibilityClient.CloseControl? {
             client().captureCloseControl(at: point,
                                          eventTime: eventTime ?? ProcessInfo.processInfo.systemUptime,
-                                         targetPID: targetPID ?? self.targetPID)
+                                         targetPID: targetPID ?? self.targetPID, includingDialogCancel: includingDialogCancel)
         }
     }
 
@@ -383,6 +388,14 @@ final class CloseControlCaptureTests: XCTestCase {
         XCTAssertEqual(control.initialWindows.count, 2)
         XCTAssertTrue(CFEqual(control.initialWindows[1], fixture.other))
         XCTAssertEqual(fixture.fallbackReads, 0)
+    }
+
+    func testDialogCancelRecognitionPreservesRedButtonAndChildCapture() throws {
+        for childHit in [false, true] {
+            let fixture = Fixture()
+            fixture.findChild = childHit
+            XCTAssertEqual(try XCTUnwrap(fixture.capture(includingDialogCancel: true)).trigger, .windowButton)
+        }
     }
 
     func testInitialMembershipIsCapturedBeforeImmediateCloseDuringFinalButtonRead() throws {
@@ -731,6 +744,20 @@ final class AdditionalCloseCaptureTests: XCTestCase {
         func captureShortcut() -> AccessibilityClient.CloseControl? {
             client().captureShortcutWindow(eventTime: ProcessInfo.processInfo.systemUptime, targetPID: pid)
         }
+
+        func useMiddleTab(siblingHit: Bool = false) {
+            if siblingHit { useSiblingHit() } else { hitElement = tab }
+            setAttribute(tab, kAXWindowAttribute, window)
+            setAttribute(tab, kAXChildrenAttribute, [button] as NSArray)
+            setAttribute(tab, kAXEnabledAttribute, kCFBooleanTrue)
+            setAttribute(button, kAXEnabledAttribute, kCFBooleanTrue)
+            frameOverrides.append((tab, CGRect(x: 80, y: 90, width: 200, height: 40)))
+        }
+
+        func captureMiddle(includingTabs: Bool = true, targetPID: pid_t? = nil) -> AccessibilityClient.CloseControl? {
+            client().captureCloseControl(at: CGPoint(x: 160, y: 105), eventTime: ProcessInfo.processInfo.systemUptime,
+                                         targetPID: targetPID ?? pid, includingTabs: includingTabs, middleClick: true)
+        }
     }
 
     func testTabProofKeepsWindowMembershipThroughImmediateNativeClose() throws {
@@ -744,6 +771,50 @@ final class AdditionalCloseCaptureTests: XCTestCase {
         XCTAssertTrue(fixture.empty)
         XCTAssertFalse(fixture.attributeNames.contains { CFEqual($0.0, fixture.tab) && $0.1 == kAXTitleAttribute },
                        "never read a tab's title")
+    }
+
+    func testMiddleClickRecognizesTabBodyAndChromiumSiblingWithoutReadingTabTitles() throws {
+        for sibling in [false, true] {
+            let fixture = Fixture()
+            fixture.useMiddleTab(siblingHit: sibling)
+            let control = try XCTUnwrap(fixture.captureMiddle())
+            XCTAssertEqual(control.trigger, .middleClickTab)
+            XCTAssertTrue(CFEqual(control.window, fixture.window))
+            XCTAssertEqual(control.initialWindows.count, 1)
+            XCTAssertEqual(control.buttonFrame, CGRect(x: 80, y: 90, width: 200, height: 40))
+            XCTAssertFalse(fixture.attributeNames.contains { CFEqual($0.0, fixture.tab) && $0.1 == kAXTitleAttribute })
+        }
+    }
+
+    func testMiddleClickRejectsWebTabsSheetsDisabledControlsAndWrongRecipient() {
+        let mutations: [(Fixture) -> Void] = [
+            { $0.webContent = true }, { $0.blocking = true }, { $0.minimized = true },
+            { $0.empty = true }, { $0.tabRole = kAXGroupRole }, { $0.groupRole = kAXGroupRole },
+            { $0.label = "Mute" }, { $0.tabCloseValue = $0.redButton },
+            { $0.setAttribute($0.tab, kAXEnabledAttribute, kCFBooleanFalse) },
+            { $0.setAttribute($0.button, kAXEnabledAttribute, kCFBooleanFalse) },
+            { $0.setAttribute($0.tab, kAXChildrenAttribute, [] as NSArray) },
+            { $0.setAttribute($0.tab, kAXWindowAttribute, $0.otherWindow) },
+            { $0.attributeError = .cannotComplete }
+        ]
+        for mutate in mutations {
+            let fixture = Fixture()
+            fixture.useMiddleTab()
+            mutate(fixture)
+            XCTAssertNil(fixture.captureMiddle())
+        }
+        let fixture = Fixture()
+        fixture.useMiddleTab()
+        XCTAssertNil(fixture.captureMiddle(includingTabs: false))
+        XCTAssertNil(fixture.captureMiddle(targetPID: 720_020))
+    }
+
+    func testMiddleClickOnAnOrdinaryButtonCannotUseRedButtonOrTabButtonCapture() {
+        let fixture = Fixture()
+        fixture.hitElement = fixture.redButton
+        fixture.setAttribute(fixture.redButton, kAXRoleAttribute, kAXButtonRole as CFString)
+        fixture.setAttribute(fixture.redButton, kAXParentAttribute, fixture.window)
+        XCTAssertNil(fixture.captureMiddle())
     }
 
     func testOfficialTabCloseAttributeWorksWithoutAnEnglishLabel() throws {

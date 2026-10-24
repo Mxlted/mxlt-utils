@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Rename the CallQuits feature to **Quit on Close** throughout settings and the menu, keeping existing preferences and exceptions.
+- Request a graceful quit after Cancel dismisses an app’s only verified standalone dialog, including supported startup file choosers. Remaining document windows, save sheets, replacement windows, and uncertain state still keep the app open.
+- Recognize middle-click closing of supported native tabs, including short clicks delivered by Middle scrolling. Only closing the final window can quit; scrolling, canceled gestures, and synthetic events never create close intent.
+
 ## 0.3.5
 
 - Handle deletion of an enabled Accessibility entry separately from switching it off: verify filtering capability, prevent unsafe timeout recovery, and show input-access recovery guidance even when macOS still reports the app as trusted.

@@ -114,7 +114,7 @@ final class CloseShortcutTests: XCTestCase {
     }
 
     func testTabsAndShortcutsCannotForceQuitOrInheritAnyWindowMode() {
-        for trigger in [CloseTrigger.tabButton, .keyboardShortcut] {
+        for trigger in [CloseTrigger.tabButton, .middleClickTab, .dialogCancel, .keyboardShortcut] {
             XCTAssertFalse(trigger.allowsForceQuit)
             XCTAssertEqual(trigger.behavior(configured: .everyWindow), .lastWindow)
             var session = CloseSession(behavior: trigger.behavior(configured: .everyWindow), startedAt: 10)
