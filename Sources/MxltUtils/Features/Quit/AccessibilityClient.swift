@@ -30,9 +30,11 @@ final class AccessibilityClient {
     typealias AttributeReader = (AXUIElement, CFString) -> (AXError, CFTypeRef?)
     typealias AttributesReader = (AXUIElement, [String]) -> (AXError, [CFTypeRef]?)
     typealias ElementFinder = (AXUIElement, CGPoint) -> (AXError, AXUIElement?)
+    typealias ProcessReader = (AXUIElement) -> pid_t?
     private let readAttribute: AttributeReader
     private let readAttributes: AttributesReader
     private let findElement: ElementFinder
+    private let readProcessID: ProcessReader
     private let system = AXUIElementCreateSystemWide()
     private var deadline: TimeInterval = 0
 
@@ -48,10 +50,14 @@ final class AccessibilityClient {
         var element: AXUIElement?
         let error = AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &element)
         return (error, element)
+    }, readProcessID: @escaping ProcessReader = { element in
+        var pid: pid_t = 0
+        return AXUIElementGetPid(element, &pid) == .success ? pid : nil
     }) {
         self.readAttribute = readAttribute
         self.readAttributes = readAttributes
         self.findElement = findElement
+        self.readProcessID = readProcessID
         // The system-wide element sets the default for every AX object in this process.
         AXUIElementSetMessagingTimeout(system, 0.12)
     }
@@ -61,7 +67,8 @@ final class AccessibilityClient {
         guard let app = NSRunningApplication(processIdentifier: targetPID), isEligible(app),
               let control = captureCloseControl(at: point, eventTime: eventTime, targetPID: targetPID,
                                                 includingTabs: includingTabs, middleClick: middleClick,
-                                                includingDialogCancel: includingDialogCancel)
+                                                includingDialogCancel: includingDialogCancel,
+                                                targetBundleIdentifier: app.bundleIdentifier)
         else { return nil }
         // The monitor rechecks eligibility after release and immediately before termination.
         // Let it adjudicate a same-process Discord hide that arrives while capture finishes.
@@ -82,7 +89,8 @@ final class AccessibilityClient {
 
     func captureCloseControl(at point: CGPoint, eventTime: TimeInterval, targetPID: pid_t,
                              includingTabs: Bool = false, middleClick: Bool = false,
-                             includingDialogCancel: Bool = false) -> CloseControl? {
+                             includingDialogCancel: Bool = false,
+                             targetBundleIdentifier: String? = nil) -> CloseControl? {
         deadline = ProcessInfo.processInfo.systemUptime + 0.55
         let now = ProcessInfo.processInfo.systemUptime
         guard targetPID > 1, eventTime.isFinite, eventTime >= 0, now >= eventTime,
@@ -94,7 +102,8 @@ final class AccessibilityClient {
                 return try middleTabControl(hit: button, at: point, targetPID: targetPID)
             }
             if includingDialogCancel,
-               let control = try dialogCancelControl(hit: button, at: point, targetPID: targetPID) { return control }
+               let control = try dialogCancelControl(hit: button, at: point, targetPID: targetPID,
+                                                    targetBundleIdentifier: targetBundleIdentifier) { return control }
             var verifiedTabButton = false
             // Some apps expose a child of the actual button to hit testing.
             for depth in 0...4 {
@@ -272,15 +281,24 @@ final class AccessibilityClient {
 
     /// A verified Cancel on the sole standalone dialog can finish an otherwise windowless
     /// app (for example TextEdit's startup chooser). Never infer this from the button label.
-    private func dialogCancelControl(hit: AXUIElement, at point: CGPoint, targetPID: pid_t) throws -> CloseControl? {
+    private func dialogCancelControl(hit: AXUIElement, at point: CGPoint, targetPID: pid_t,
+                                     targetBundleIdentifier: String?) throws -> CloseControl? {
         var button = hit
         for depth in 0...4 {
             if try string(button, kAXRoleAttribute) == kAXButtonRole { break }
             guard depth < 4, let parent = try element(button, kAXParentAttribute) else { return nil }
             button = parent
         }
-        guard let window = try element(button, kAXWindowAttribute),
-              try value(window, kAXSubroleAttribute, optional: true) as? String == kAXDialogSubrole else { return nil }
+        let chooserWindow = try targetBundleIdentifier == "com.apple.TextEdit"
+            ? textEditOpenPanelWindow(for: button, targetPID: targetPID) : nil
+        let window: AXUIElement
+        if let chooserWindow {
+            window = chooserWindow
+        } else {
+            guard let owner = try element(button, kAXWindowAttribute),
+                  try value(owner, kAXSubroleAttribute, optional: true) as? String == kAXDialogSubrole else { return nil }
+            window = owner
+        }
         // Remote open-panel controls may have a different PID. Exact membership in the
         // native recipient's AXWindows and its official AXCancelButton establish ownership.
         let app = AXUIElementCreateApplication(targetPID)
@@ -290,13 +308,40 @@ final class AccessibilityClient {
               try value(window, kAXDocumentAttribute, optional: true) == nil,
               try bool(window, kAXMinimizedAttribute) == false,
               try bool(window, kAXModalAttribute) != nil,
-              let children = try value(window, kAXChildrenAttribute), try !hasSheet(children),
-              let official = try element(window, kAXCancelButtonAttribute), CFEqual(official, button) else { return nil }
+              let children = try value(window, kAXChildrenAttribute), try !hasSheet(children) else { return nil }
+        if let raw = try value(window, kAXCancelButtonAttribute, optional: true) {
+            guard let official = axElement(raw), CFEqual(official, button) else { return nil }
+        } else if chooserWindow == nil { return nil }
         let attributes = try values(button, [kAXRoleAttribute, kAXEnabledAttribute, kAXPositionAttribute, kAXSizeAttribute])
         guard attributes[0] as? String == kAXButtonRole, try boolean(attributes[1]),
               let frame = frame(position: attributes[2], size: attributes[3]), frame.contains(point) else { return nil }
         return CloseControl(appElement: app, window: window, initialWindows: initial,
                             buttonFrame: frame, trigger: .dialogCancel)
+    }
+
+    /// Observed TextEdit startup chooser: AXStandardWindow/open-panel, with CancelButton
+    /// directly inside its AXSplitGroup. Both AXWindow on the button and AXCancelButton on
+    /// the window return noValue. Scope this compatibility path to TextEdit and verify both
+    /// directions of the exact native ancestry; a label or identifier alone is insufficient.
+    private func textEditOpenPanelWindow(for button: AXUIElement, targetPID: pid_t) throws -> AXUIElement? {
+        guard try value(button, kAXIdentifierAttribute, optional: true) as? String == "CancelButton",
+              let group = try element(button, kAXParentAttribute),
+              try string(group, kAXRoleAttribute) == kAXSplitGroupRole,
+              let window = try element(group, kAXParentAttribute),
+              try string(window, kAXRoleAttribute) == kAXWindowRole,
+              try string(window, kAXSubroleAttribute) == kAXStandardWindowSubrole,
+              try value(window, kAXIdentifierAttribute, optional: true) as? String == "open-panel",
+              try bool(window, kAXModalAttribute) == false else { return nil }
+        guard readProcessID(window) == targetPID, readProcessID(button) == targetPID,
+              try children(window).filter({ CFEqual($0, group) }).count == 1,
+              try children(group).filter({ CFEqual($0, button) }).count == 1 else { return nil }
+        // Missing AXWindow is expected here; conflicting or malformed identity is not.
+        for control in [button, group] {
+            if let raw = try value(control, kAXWindowAttribute, optional: true) {
+                guard let reportedWindow = axElement(raw), CFEqual(reportedWindow, window) else { return nil }
+            }
+        }
+        return window
     }
 
     private func children(_ object: AXUIElement) throws -> [AXUIElement] {

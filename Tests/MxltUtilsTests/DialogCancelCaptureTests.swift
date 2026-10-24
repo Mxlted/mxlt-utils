@@ -15,10 +15,13 @@ final class DialogCancelCaptureTests: XCTestCase {
         let other = AXUIElementCreateApplication(730_004)
         let sheet = AXUIElementCreateApplication(730_005)
         let child = AXUIElementCreateApplication(730_006)
+        let splitGroup = AXUIElementCreateApplication(730_007)
         var attributes: [(AXUIElement, String, AXError, CFTypeRef?)] = []
         var hit: AXUIElement
         var readNames: [String] = []
         var beforeButtonRead: (() -> Void)?
+        var windowOwner: pid_t? = 730_001
+        var buttonOwner: pid_t? = 730_001
         let point = CGPoint(x: 110, y: 110)
 
         init() {
@@ -64,13 +67,34 @@ final class DialogCancelCaptureTests: XCTestCase {
                     values.append(value)
                 }
                 return (.success, values)
-            }, findElement: { [self] _, _ in (.success, hit) })
+            }, findElement: { [self] _, _ in (.success, hit) }, readProcessID: { [self] element in
+                if CFEqual(element, dialog) { return windowOwner }
+                if CFEqual(element, cancel) { return buttonOwner }
+                return nil
+            })
         }
 
         func capture(enabled: Bool = true, targetPID: pid_t? = nil, eventTime: TimeInterval? = nil,
-                     at point: CGPoint? = nil) -> AccessibilityClient.CloseControl? {
+                     at point: CGPoint? = nil, bundleIdentifier: String? = nil) -> AccessibilityClient.CloseControl? {
             client().captureCloseControl(at: point ?? self.point, eventTime: eventTime ?? ProcessInfo.processInfo.systemUptime,
-                                         targetPID: targetPID ?? pid, includingDialogCancel: enabled)
+                                         targetPID: targetPID ?? pid, includingDialogCancel: enabled,
+                                         targetBundleIdentifier: bundleIdentifier)
+        }
+
+        func useTextEditChooser() {
+            set(dialog, kAXSubroleAttribute, kAXStandardWindowSubrole as CFString)
+            set(dialog, kAXIdentifierAttribute, "open-panel" as CFString)
+            set(dialog, kAXModalAttribute, kCFBooleanFalse)
+            set(dialog, kAXDocumentAttribute, nil, error: .noValue)
+            set(dialog, kAXCancelButtonAttribute, nil, error: .noValue)
+            set(dialog, kAXChildrenAttribute, [splitGroup] as NSArray)
+            set(splitGroup, kAXRoleAttribute, kAXSplitGroupRole as CFString)
+            set(splitGroup, kAXParentAttribute, dialog)
+            set(splitGroup, kAXChildrenAttribute, [cancel] as NSArray)
+            set(splitGroup, kAXWindowAttribute, nil, error: .noValue)
+            set(cancel, kAXIdentifierAttribute, "CancelButton" as CFString)
+            set(cancel, kAXWindowAttribute, nil, error: .noValue)
+            set(cancel, kAXParentAttribute, splitGroup)
         }
 
         func snapshot() -> CloseSnapshot {
@@ -91,6 +115,61 @@ final class DialogCancelCaptureTests: XCTestCase {
             XCTAssertEqual(control.initialWindows.count, 1)
             XCTAssertFalse(fixture.readNames.contains(kAXTitleAttribute))
             XCTAssertFalse(fixture.readNames.contains(kAXDescriptionAttribute))
+        }
+    }
+
+    func testObservedTextEditChooserResolvesCancelThroughNativeAncestryWithoutOfficialAttributes() throws {
+        for childHit in [false, true] {
+            let fixture = Fixture()
+            fixture.useTextEditChooser()
+            if childHit { fixture.hit = fixture.child }
+            let control = try XCTUnwrap(fixture.capture(bundleIdentifier: "com.apple.TextEdit"))
+            XCTAssertEqual(control.trigger, .dialogCancel)
+            XCTAssertTrue(CFEqual(control.window, fixture.dialog))
+            XCTAssertEqual(control.initialWindows.count, 1)
+            XCTAssertFalse(fixture.readNames.contains(kAXTitleAttribute))
+            XCTAssertFalse(fixture.readNames.contains(kAXDescriptionAttribute))
+            var session = CloseSession(behavior: control.trigger.behavior(configured: .everyWindow), startedAt: 0)
+            XCTAssertEqual(session.evaluate(snapshot: fixture.snapshot(), now: 0), .wait)
+            fixture.set(fixture.app, kAXWindowsAttribute, [] as NSArray)
+            XCTAssertEqual(session.evaluate(snapshot: fixture.snapshot(), now: 0.1), .wait)
+            XCTAssertEqual(session.evaluate(snapshot: fixture.snapshot(), now: 0.3), .quit)
+        }
+    }
+
+    func testTextEditChooserIdentifiersCannotAuthorizeOtherAppsOrUnsupportedAncestry() {
+        let fixture = Fixture()
+        fixture.useTextEditChooser()
+        for bundleID: String? in [nil, "com.apple.Preview", "com.example.fixture"] {
+            XCTAssertNil(fixture.capture(bundleIdentifier: bundleID))
+        }
+        let cases: [(String, (Fixture) -> Void)] = [
+            ("wrong window identifier", { $0.set($0.dialog, kAXIdentifierAttribute, "save-panel" as CFString) }),
+            ("wrong button identifier", { $0.set($0.cancel, kAXIdentifierAttribute, "OKButton" as CFString) }),
+            ("unreadable identifier", { $0.set($0.cancel, kAXIdentifierAttribute, nil, error: .cannotComplete) }),
+            ("web ancestry", { $0.set($0.splitGroup, kAXRoleAttribute, "AXWebArea" as CFString) }),
+            ("unlisted group", { $0.set($0.dialog, kAXChildrenAttribute, [] as NSArray) }),
+            ("unlisted button", { $0.set($0.splitGroup, kAXChildrenAttribute, [] as NSArray) }),
+            ("duplicate button", { $0.set($0.splitGroup, kAXChildrenAttribute, [$0.cancel, $0.cancel] as NSArray) }),
+            ("conflicting button window", { $0.set($0.cancel, kAXWindowAttribute, $0.other) }),
+            ("malformed group window", { $0.set($0.splitGroup, kAXWindowAttribute, "invalid" as CFString) }),
+            ("conflicting official cancel", { $0.set($0.dialog, kAXCancelButtonAttribute, $0.other) }),
+            ("wrong window owner", { $0.windowOwner = 730_010 }),
+            ("unknown button owner", { $0.buttonOwner = nil }),
+            ("wrong button owner", { $0.buttonOwner = 730_010 }),
+            ("another document window", { $0.set($0.app, kAXWindowsAttribute, [$0.dialog, $0.other] as NSArray) }),
+            ("unreadable windows", { $0.set($0.app, kAXWindowsAttribute, nil, error: .cannotComplete) }),
+            ("sheet", { $0.set($0.dialog, kAXChildrenAttribute, [$0.splitGroup, $0.sheet] as NSArray) }),
+            ("document present", { $0.set($0.dialog, kAXDocumentAttribute, "fixture-document" as CFString) }),
+            ("modal window", { $0.set($0.dialog, kAXModalAttribute, kCFBooleanTrue) }),
+            ("minimized", { $0.set($0.dialog, kAXMinimizedAttribute, kCFBooleanTrue) }),
+            ("disabled cancel", { $0.set($0.cancel, kAXEnabledAttribute, kCFBooleanFalse) })
+        ]
+        for (reason, mutate) in cases {
+            let invalid = Fixture()
+            invalid.useTextEditChooser()
+            mutate(invalid)
+            XCTAssertNil(invalid.capture(bundleIdentifier: "com.apple.TextEdit"), reason)
         }
     }
 
