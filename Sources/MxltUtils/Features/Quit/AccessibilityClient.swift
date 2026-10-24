@@ -37,6 +37,7 @@ final class AccessibilityClient {
     private let readProcessID: ProcessReader
     private let system = AXUIElementCreateSystemWide()
     private var deadline: TimeInterval = 0
+    private(set) var snapshotError: AXError?
 
     init(readAttribute: @escaping AttributeReader = { element, attribute in
         var value: CFTypeRef?
@@ -386,6 +387,7 @@ final class AccessibilityClient {
     }
 
     func snapshot(for hit: Hit) -> CloseSnapshot {
+        snapshotError = nil
         deadline = ProcessInfo.processInfo.systemUptime + 0.45
         do {
             var current = try windows(hit.appElement)
@@ -440,6 +442,7 @@ final class AccessibilityClient {
                 targetWindowMinimized: minimized
             )
         } catch {
+            if case ReadError.unavailable(let failure) = error { snapshotError = failure }
             return CloseSnapshot(windowCount: 0, targetWindowPresent: true,
                                  hasBlockingUI: false, isReliable: false)
         }

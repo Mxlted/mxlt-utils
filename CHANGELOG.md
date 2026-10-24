@@ -5,6 +5,7 @@
 - Rename the CallQuits feature to **Quit on Close** throughout settings and the menu, keeping existing preferences and exceptions.
 - Request a graceful quit after Cancel dismisses an app’s only verified standalone dialog, including supported startup file choosers. Remaining document windows, save sheets, replacement windows, and uncertain state still keep the app open.
 - Fix TextEdit’s startup chooser, which exposes a standard window and CancelButton identifier instead of the usual dialog/Cancel attributes. Verify its exact native ancestry and sole-window state before requesting quit.
+- Handle TextEdit Cancel clicks routed through Apple's Open and Save Panel service, and briefly retry its temporary Accessibility failures while requiring fresh confirmation that no windows remain.
 - Recognize middle-click closing of supported native tabs, including short clicks delivered by Middle scrolling. Only closing the final window can quit; scrolling, canceled gestures, and synthetic events never create close intent.
 
 ## 0.3.5

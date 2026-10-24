@@ -59,6 +59,7 @@ final class CloseMonitor {
     private var generation: UInt64 = 0
     private var gesture: CloseGesture?
     private var pressIdentity: EventIdentity?
+    private var hostedPanelIdentity: HostedPanelEventIdentity?
     private var pressedButton: Int?
     private var releasePending = false
     private var applicationVisibility: CloseApplicationVisibility?
@@ -232,6 +233,7 @@ final class CloseMonitor {
         generation &+= 1
         gesture = nil
         pressIdentity = nil
+        hostedPanelIdentity = nil
         pressedButton = nil
         releasePending = false
         applicationVisibility = nil
@@ -463,9 +465,19 @@ final class CloseMonitor {
         switch type {
         case .leftMouseDown, .otherMouseDown:
             invalidate()
+            let owner = windowOwner(eventWindow)
+            let directIdentity = EventIdentity(nativeProcessID: targetValue, eventWindowID: eventWindow,
+                                               windowOwnerProcessID: owner)
+            if directIdentity == nil, button == 0, intent == .normal,
+               let owner, owner > 1, owner <= Int64(Int32.max), targetValue > 1, targetValue <= Int64(Int32.max),
+               let recipient = NSRunningApplication(processIdentifier: pid_t(targetValue)), !recipient.isTerminated,
+               let host = NSRunningApplication(processIdentifier: pid_t(owner)) {
+                hostedPanelIdentity = HostedPanelEventIdentity(nativeProcessID: targetValue, eventWindowID: eventWindow,
+                    windowOwnerProcessID: owner, ownerBundleIdentifier: host.bundleIdentifier,
+                    recipientBundleIdentifier: recipient.bundleIdentifier, recipientExecutable: recipient.executableURL?.path)
+            }
             guard button == 0 || model.additionalCloseMethods,
-                  let identity = EventIdentity(nativeProcessID: targetValue, eventWindowID: eventWindow,
-                                               windowOwnerProcessID: windowOwner(eventWindow)),
+                  let identity = directIdentity ?? hostedPanelIdentity?.host,
                   let app = NSRunningApplication(processIdentifier: identity.processID),
                   isEligible(app) else { return }
             pressIdentity = identity
@@ -477,7 +489,8 @@ final class CloseMonitor {
             attemptApplication = app
             worker.mouseDown(point: point, eventTime: timestamp, targetPID: identity.processID, generation: generation,
                              includingTabs: model.additionalCloseMethods && intent == .normal,
-                             middleClick: button == 2, includingDialogCancel: button == 0 && intent == .normal)
+                             middleClick: button == 2, includingDialogCancel: button == 0 && intent == .normal,
+                             requiresDialogCancel: hostedPanelIdentity != nil)
             let token = generation
             DispatchQueue.main.asyncAfter(deadline: .now() + CloseGesture.maximumDuration) { [weak self] in
                 guard let self, token == self.generation, self.gesture != nil else { return }
@@ -487,14 +500,19 @@ final class CloseMonitor {
             guard pressedButton == button else { invalidate(); return }
             if let gesture, !gesture.allowsDrag(toX: point.x, y: point.y) { invalidate() }
         case .leftMouseUp, .otherMouseUp:
+            let owner = windowOwner(eventWindow)
+            let releaseMatches = hostedPanelIdentity?.matchesRelease(nativeProcessID: targetValue, eventWindowID: eventWindow,
+                                                                      windowOwnerProcessID: owner)
+                ?? pressIdentity?.matchesRelease(nativeProcessID: targetValue, eventWindowID: eventWindow,
+                                                 windowOwnerProcessID: owner) ?? false
             guard pressedButton == button, let identity = pressIdentity,
-                  identity.matchesRelease(nativeProcessID: targetValue, eventWindowID: eventWindow,
-                                          windowOwnerProcessID: windowOwner(eventWindow)),
+                  releaseMatches,
                   let action = gesture?.actionOnRelease(x: point.x, y: point.y, timestamp: timestamp,
                                                        targetProcessID: identity.processID, modifiers: intent)
             else { invalidate(); return }
             gesture = nil
             pressIdentity = nil
+            hostedPanelIdentity = nil
             pressedButton = nil
             let force = action == .force
             applicationVisibility?.recordMatchedRelease(at: timestamp, permitsHiddenClose: !force && button == 0)
@@ -680,13 +698,14 @@ private final class CloseWorker {
     }
 
     func mouseDown(point: CGPoint, eventTime: TimeInterval, targetPID: pid_t, generation: UInt64,
-                   includingTabs: Bool, middleClick: Bool, includingDialogCancel: Bool) {
+                   includingTabs: Bool, middleClick: Bool, includingDialogCancel: Bool, requiresDialogCancel: Bool) {
         queue.async {
             guard self.generation == generation else { return }
             self.downTime = eventTime
             self.down = self.client.closeButton(at: point, eventTime: eventTime, targetPID: targetPID,
                                                 includingTabs: includingTabs, middleClick: middleClick,
                                                 includingDialogCancel: includingDialogCancel)
+            if requiresDialogCancel && self.down?.trigger != .dialogCancel { self.down = nil }
         }
     }
 
@@ -732,10 +751,22 @@ private final class CloseWorker {
     }
 
     private func poll(hit: AccessibilityClient.Hit, session: CloseSession, generation: UInt64,
+                      recovery: DialogCloseReadRecovery = DialogCloseReadRecovery(),
                       completion: @escaping @MainActor (CloseDecision, TimeInterval, Bool) -> Void) {
         guard self.generation == generation else { return }
         var session = session
         let snapshot = client.snapshot(for: hit)
+        var recovery = recovery
+        if hit.application.bundleIdentifier == "com.apple.TextEdit",
+           recovery.shouldRetry(trigger: hit.trigger, snapshot: snapshot, error: client.snapshotError) {
+            session.discardConfirmationInterval()
+            // Preserve the original session and deadline. A failed read authorizes nothing;
+            // window/sheet notifications remain active during the bounded fresh-read recovery.
+            queue.asyncAfter(deadline: .now() + 0.1) {
+                self.poll(hit: hit, session: session, generation: generation, recovery: recovery, completion: completion)
+            }
+            return
+        }
         let checkedAt = ProcessInfo.processInfo.systemUptime
         let decision = session.evaluate(snapshot: snapshot, now: checkedAt)
         switch decision {
@@ -744,7 +775,7 @@ private final class CloseWorker {
         case .wait:
             // Schedule from completion, so slow AX reads never build up a backlog of overdue polls.
             queue.asyncAfter(deadline: .now() + 0.1) {
-                self.poll(hit: hit, session: session, generation: generation, completion: completion)
+                self.poll(hit: hit, session: session, generation: generation, recovery: recovery, completion: completion)
             }
         }
     }

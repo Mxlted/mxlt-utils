@@ -171,6 +171,7 @@ public struct CloseSession: Sendable {
     private let startedAt: TimeInterval
     private var previousObservationAt: TimeInterval
     private var completionObservedAt: TimeInterval?
+    private var confirmationStartedAt: TimeInterval?
     private var confirmationWindowCount: Int?
     private var confirmationKind: CompletionKind?
     private var confirmationApplicationHidden: Bool?
@@ -183,6 +184,13 @@ public struct CloseSession: Sendable {
         self.allowsApplicationHide = allowsApplicationHide
         self.startedAt = startedAt
         self.previousObservationAt = startedAt
+    }
+
+    /// Discard elapsed confirmation after an integration-approved transient read failure.
+    /// Keep disappearance history, original deadline, and terminal decisions intact.
+    /// The next reliable matching snapshot starts a fresh complete interval.
+    public mutating func discardConfirmationInterval() {
+        confirmationStartedAt = nil
     }
 
     public mutating func evaluate(snapshot: CloseSnapshot, now: TimeInterval) -> CloseDecision {
@@ -219,8 +227,9 @@ public struct CloseSession: Sendable {
             return cancel(.remainingWindows)
         }
 
-        guard let completedAt = completionObservedAt else {
+        guard completionObservedAt != nil else {
             completionObservedAt = now
+            confirmationStartedAt = now
             confirmationWindowCount = snapshot.windowCount
             confirmationKind = completionKind
             confirmationApplicationHidden = snapshot.applicationHidden
@@ -233,7 +242,11 @@ public struct CloseSession: Sendable {
             return cancel(.windowSetChanged)
         }
 
-        guard now - completedAt >= Self.confirmationInterval,
+        guard let confirmedAt = confirmationStartedAt else {
+            confirmationStartedAt = now
+            return .wait
+        }
+        guard now - confirmedAt >= Self.confirmationInterval,
               now - startedAt >= Self.minimumElapsedTime
         else {
             return .wait
