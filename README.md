@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Mxlted/mxlt-utils/releases/download/v0.3.7/mxlt-utils-0.3.7-macos-arm64.dmg"><strong>Download for Mac</strong></a> ·
+  <a href="https://github.com/Mxlted/mxlt-utils/releases/download/v0.3.8/mxlt-utils-0.3.8-macos-arm64.dmg"><strong>Download for Mac</strong></a> ·
   <a href="#features">Features</a> ·
   <a href="#getting-started">Getting started</a> ·
   <a href="https://github.com/Mxlted/mxlt-utils/releases">Release notes</a> ·
@@ -61,7 +61,7 @@ Each feature has its own switch. Enable just the tools you need, pause everythin
 
 **Requires macOS 14 Sonoma or later and an Apple silicon Mac.** A mouse with a clickable wheel or middle button is needed for middle scrolling.
 
-1. [Download the DMG](https://github.com/Mxlted/mxlt-utils/releases/download/v0.3.7/mxlt-utils-0.3.7-macos-arm64.dmg).
+1. [Download the DMG](https://github.com/Mxlted/mxlt-utils/releases/download/v0.3.8/mxlt-utils-0.3.8-macos-arm64.dmg).
 2. Open it and drag **mxlt-utils** into **Applications**.
 3. Launch **mxlt-utils** and turn on the features you want. Features start off.
 4. When prompted, allow **mxlt-utils** in **System Settings → Privacy & Security → Accessibility**, then return to the app and click **Check again**.
@@ -69,7 +69,7 @@ Each feature has its own switch. Enable just the tools you need, pause everythin
 The app and DMG are Developer ID signed and notarized. Download checksums are included with each release.
 
 > [!NOTE]
-> **v0.3.7 is a preview release.** App compatibility and hardware coverage are still growing. See [tested environments and known limits](docs/TESTING.md#compatibility-evidence) before relying on a particular setup. Updates are downloaded manually from [Releases](https://github.com/Mxlted/mxlt-utils/releases).
+> **v0.3.8 is a preview release.** App compatibility and hardware coverage are still growing. See [tested environments and known limits](docs/TESTING.md#compatibility-evidence) before relying on a particular setup. Updates are downloaded manually from [Releases](https://github.com/Mxlted/mxlt-utils/releases).
 
 ## Privacy & permissions
 

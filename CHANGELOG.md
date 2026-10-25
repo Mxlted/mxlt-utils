@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.8
 
 - Add stronger middle-scroll acceleration far from the anchor, with six times the previous maximum speed while preserving fine control nearby and immediate stops.
 
