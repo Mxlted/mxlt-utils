@@ -2,7 +2,9 @@
 
 Normal CI stays independent of signing credentials. Release locally with an installed Developer ID Application identity and an existing `notarytool` Keychain profile. Never export keys or upload credentials to Actions.
 
-Release pages use one title: `VERSION — Short description`. Keep the opening `#` title in the standalone Markdown notes, but omit that line and its following blank line from the GitHub release body. GitHub displays the release title itself; the body should begin with the summary, followed by `##` sections as needed.
+Release pages use one title: `VERSION - Short description`, with a plain hyphen and no em dashes. Keep the opening `#` title in the standalone Markdown notes, but omit that line and its following blank line from the GitHub release body. GitHub displays the release title itself.
+
+Start with a short summary of the user-visible change. Use concise `Changes`, `Added`, or `Fixed` sections when they help, and describe the affected behavior directly. Keep small fixes short. Include version-specific DMG and checksum links, system requirements, installation steps, and a source or comparison link. Avoid slogans, repeated feature pitches, and internal implementation detail that does not help the reader. Keep test counts, release verification logs, and preview coverage reports in `docs/TESTING.md` and local release records, rather than a validation or preview-limits section in the release notes. Mention any required upgrade action or relevant behavior restriction alongside the affected change.
 
 1. Finish the relevant native checks and full routine checks in [TESTING.md](TESTING.md). Review input safety and ensure no reference repository, agent notes, secrets, or generated output is indexed. Confirm source provenance and license notices.
 2. Update `Resources/Info.plist`, changelog, release notes, and verification evidence. Commit and push, then require CI success on that exact source commit. Use a semantic `v0.x.y` tag; never move a published tag.
