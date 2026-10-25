@@ -1,6 +1,7 @@
 #!/usr/bin/env swift
 import AppKit
 import ApplicationServices
+import Darwin
 
 // Drives only the disposable fixture through the real WindowServer/event-tap path.
 // These are synthetic-input checks, never evidence of physical mouse behavior.
@@ -214,6 +215,19 @@ func run() throws -> [String: Any] {
             if let expectedLayer = canvasLayersByPID[pid_t(number(item, kCGWindowOwnerPID as String))],
                number(item, kCGWindowLayer as String) == expectedLayer,
                displays.contains(rectangle), fixtureOwnsSystemHit() { return false }
+            // Display Capture exposes the system cursor in this list. Verify its
+            // executable as well as its level; a foreign cursor-level window is a blocker.
+            if number(item, kCGWindowLayer as String) == Double(CGWindowLevelForKey(.cursorWindow)),
+               let owner = item[kCGWindowOwnerPID as String] as? NSNumber,
+               owner.int64Value > 1, owner.int64Value <= Int64(Int32.max) {
+                var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+                if proc_pidpath(owner.int32Value, &buffer, UInt32(buffer.count)) > 0 {
+                    let path = String(cString: buffer)
+                    let systemCursor = path == "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+                        || path == "/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer"
+                    if systemCursor && fixtureOwnsSystemHit() { return false }
+                }
+            }
             return rectangle.contains(location)
         }
         if hit.map({ number($0, kCGWindowOwnerPID as String) == Double(pid) }) != true {

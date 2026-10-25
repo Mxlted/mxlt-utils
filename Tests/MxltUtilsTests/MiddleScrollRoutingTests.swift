@@ -139,6 +139,36 @@ final class MiddleScrollRoutingTests: XCTestCase {
         XCTAssertFalse(valid([malformed]))
     }
 
+    func testDisplayCaptureCursorRequiresVerifiedOwnerLevelAndFreshTargetHit() {
+        let cursor = window(id: 2, owner: 177, layer: Int(CGWindowLevelForKey(.cursorWindow)))
+        func permits(_ overlay: [String: Any], owner: pid_t? = 177, hit: pid_t? = 42,
+                     beneath: [[String: Any]]? = nil) -> Bool {
+            MiddleScrollWindowRouting.isValid(
+                windows: [overlay] + (beneath ?? [window()]), processID: 42, windowID: 7,
+                initialBounds: bounds, initialLayer: 0, anchor: anchor, ownProcessID: 99,
+                systemHitProcessID: hit, cursorProcessID: owner)
+        }
+        XCTAssertFalse(valid([cursor, window()]), "Reproduces the capture cursor obstruction without verification")
+        XCTAssertTrue(permits(cursor))
+        XCTAssertFalse(permits(cursor, owner: nil))
+        XCTAssertFalse(permits(cursor, owner: 178))
+        XCTAssertFalse(permits(cursor, hit: nil))
+        XCTAssertFalse(permits(cursor, hit: 177))
+        XCTAssertFalse(permits(window(id: 2, owner: 177, layer: 24)), "System menus remain blockers")
+        XCTAssertFalse(permits(window(id: 2, owner: 43, layer: Int(CGWindowLevelForKey(.cursorWindow)))))
+        XCTAssertFalse(permits(cursor, beneath: [window(id: 8), window()]), "AX app identity alone cannot bypass a same-app cover")
+        XCTAssertFalse(permits(cursor, beneath: [window(id: 8, owner: 43), window()]))
+        XCTAssertFalse(permits(cursor, beneath: []))
+        XCTAssertFalse(permits(cursor, beneath: [window(frame: bounds.offsetBy(dx: 1, dy: 0))]))
+    }
+
+    func testCursorLevelDoesNotEstablishWindowServerIdentity() {
+        let cursor = window(owner: ProcessInfo.processInfo.processIdentifier,
+                            layer: Int(CGWindowLevelForKey(.cursorWindow)))
+        XCTAssertNil(MiddleScrollCursorOwner.verifiedProcessID(in: [cursor]))
+        XCTAssertNil(MiddleScrollCursorOwner.verifiedProcessID(in: []))
+    }
+
     func testNativeReplayPairRetainsButtonModifiersAndClickCountAtOriginalAnchor() throws {
         let nativeSource = try XCTUnwrap(CGEventSource(stateID: .privateState))
         nativeSource.userData = 17

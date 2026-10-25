@@ -664,12 +664,14 @@ private final class MiddleScrollTarget: @unchecked Sendable {
 
     func windowIsValid() -> Bool {
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
+        let cursorProcessID = MiddleScrollCursorOwner.verifiedProcessID(in: windows)
         var systemHitProcessID: pid_t?
         if windows.contains(where: { MiddleScrollWindowRouting.isSystemCanvas($0, systemCanvases: systemCanvases,
-                                                                            displayBounds: displayBounds) }) {
+                                                                            displayBounds: displayBounds)
+            || MiddleScrollWindowRouting.isSystemCursor($0, cursorProcessID: cursorProcessID) }) {
             let system = AXUIElementCreateSystemWide()
             // This is the same process-default bound used by CallQuits. One system-wide hit is
-            // required to distinguish invisible system canvases from interactive system UI.
+            // required to distinguish system canvases/capture cursors from interactive system UI.
             guard AXUIElementSetMessagingTimeout(system, 0.12) == .success else { return false }
             var hit: AXUIElement?
             guard AXUIElementCopyElementAtPosition(system, Float(anchor.x), Float(anchor.y), &hit) == .success,
@@ -683,7 +685,7 @@ private final class MiddleScrollTarget: @unchecked Sendable {
                                                 initialLayer: initialLayer,
                                                 anchor: anchor, ownProcessID: ProcessInfo.processInfo.processIdentifier,
                                                 systemCanvases: systemCanvases, displayBounds: displayBounds,
-                                                systemHitProcessID: systemHitProcessID)
+                                                systemHitProcessID: systemHitProcessID, cursorProcessID: cursorProcessID)
     }
 
     private static func window(_ id: CGWindowID) -> [String: Any]? {

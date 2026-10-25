@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix middle scrolling and short middle clicks canceling when OBS Display Capture exposes the macOS cursor as a window. Real windows covering the target still cancel the gesture.
+
 ## 0.3.7
 
 - Declare the app's macOS platform explicitly so macOS identifies the Apple-silicon bundle correctly instead of classifying it as an iOS app.
