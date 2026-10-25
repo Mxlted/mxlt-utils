@@ -36,7 +36,33 @@ final class ScrollMotionTests: XCTestCase {
             for _ in 0..<240 { _ = gesture.scrollDelta(elapsed: 1.0 / 60) }
             let delta = gesture.scrollDelta(elapsed: 5)
             XCTAssertGreaterThan(hypot(Double(delta.x), Double(delta.y)), 80)
-            XCTAssertLessThanOrEqual(hypot(Double(delta.x), Double(delta.y)), 8000.0 / 30 + 2)
+            XCTAssertLessThanOrEqual(hypot(Double(delta.x), Double(delta.y)), ScrollGesture.maximumSpeed / 30 + 2)
+        }
+    }
+
+    func testFastDiagonalTravelRemainsFrameRateIndependentAndReversesCleanly() {
+        for smooth in [false, true] {
+            var totals: [Double] = []
+            for hz in [30, 60, 120, 240] {
+                var gesture = ScrollGesture()
+                gesture.begin(at: ScrollPoint(x: 0, y: 0), timestamp: 1,
+                              settings: ScrollSettings(smooth: smooth))
+                gesture.move(to: ScrollPoint(x: 600, y: 800))
+                var x = 0.0, y = 0.0
+                for _ in 0..<hz {
+                    let delta = gesture.scrollDelta(elapsed: 1.0 / Double(hz))
+                    x += Double(delta.x); y += Double(delta.y)
+                }
+                totals.append(hypot(x, y))
+                XCTAssertGreaterThan(totals.last!, 40_000)
+                gesture.move(to: ScrollPoint(x: -600, y: -800))
+                let reversed = gesture.scrollDelta(elapsed: 1.0 / Double(hz))
+                XCTAssertLessThan(reversed.x, 0)
+                XCTAssertLessThan(reversed.y, 0)
+                gesture.cancel()
+                XCTAssertEqual(gesture.scrollDelta(elapsed: 1), .zero)
+            }
+            for total in totals { XCTAssertEqual(total, totals[0], accuracy: 2) }
         }
     }
 
@@ -135,7 +161,7 @@ final class ScrollMotionTests: XCTestCase {
             XCTAssertEqual(motion.step(toward: ScrollVelocity(x: 2400, y: 0), elapsed: elapsed, smooth: true), .zero)
         }
         for target in [ScrollVelocity(x: .nan, y: 0), ScrollVelocity(x: 0, y: .infinity),
-                       ScrollVelocity(x: 8000, y: 8000)] {
+                       ScrollVelocity(x: ScrollGesture.maximumSpeed, y: ScrollGesture.maximumSpeed)] {
             XCTAssertEqual(motion.step(toward: target, elapsed: 1.0 / 60, smooth: true), .zero)
         }
         var fresh = ScrollMotion()
@@ -145,7 +171,7 @@ final class ScrollMotionTests: XCTestCase {
 
     func testGestureStopsClearSmoothingBeforeAnotherTick() {
         let anchor = ScrollPoint(x: 100, y: 100)
-        let moved = ScrollPoint(x: 200, y: 200)
+        let moved = ScrollPoint(x: 1100, y: 1100)
         for stop in ["dead-zone", "dead-zone-between-ticks", "release", "cancel", "reset"] {
             var gesture = ScrollGesture()
             gesture.begin(at: anchor, timestamp: 1)

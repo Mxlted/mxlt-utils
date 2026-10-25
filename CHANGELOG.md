@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add stronger middle-scroll acceleration far from the anchor, with six times the previous maximum speed while preserving fine control nearby and immediate stops.
+
 - Fix middle scrolling and short middle clicks canceling when OBS Display Capture exposes the macOS cursor as a window. Real windows covering the target still cancel the gesture.
 
 ## 0.3.7

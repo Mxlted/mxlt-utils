@@ -212,6 +212,23 @@ final class ScrollGestureTests: XCTestCase {
         }
     }
 
+    func testFarDistanceBoostPreservesNearControlAndHasNoThresholdJump() {
+        var gesture = ScrollGesture()
+        gesture.begin(at: origin, timestamp: 1)
+        func speed(_ distance: Double) -> Double {
+            gesture.move(to: ScrollPoint(x: origin.x + 8 + distance, y: origin.y))
+            return gesture.velocity.x
+        }
+        for (distance, expected) in [(10.0, 44.0), (100, 800), (200, 2400)] {
+            XCTAssertEqual(speed(distance), expected, accuracy: 0.000001)
+        }
+        XCTAssertLessThan(speed(200.001) - speed(199.999), 0.05, "No sudden speed step at boost onset")
+        XCTAssertEqual(speed(400), 16_000, accuracy: 0.000001)
+        XCTAssertEqual(speed(600), 48_000, accuracy: 0.000001)
+        XCTAssertEqual(speed(1000), 48_000, accuracy: 0.000001)
+        XCTAssertEqual(speed(100), 800, accuracy: 0.000001, "Returning closer restores precise control")
+    }
+
     func testIdleEventsAndRepeatedCleanupDoNotInventGesture() {
         var gesture = ScrollGesture()
         gesture.cancel()

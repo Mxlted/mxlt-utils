@@ -28,6 +28,7 @@ The state file atomically records at most 80 lifecycle messages, window IDs, fix
 | `passthrough-click` | none | With scrolling disabled or the fixture excluded, one native paired click arrives without replay. |
 | `wheel` | none | Ordinary untagged wheel input reaches and moves the native view unchanged. |
 | `scroll` | none | Scroll begins outside the dead zone, continues without pointer movement, stops on return and release, and produces no middle click. |
+| `fast-scroll` | none | Far-distance scrolling delivers more than the former 8,000 pt/s limit, continues while stationary, then stops on dead-zone return/release without a click. Needs 650 points of down/right display travel. |
 | `nested-scroll` | none | The inner scroll view receives the gesture without redirecting it to the outer grid. |
 | `escape` | none | Escape stops scrolling and the eventual button release produces no click. |
 | `pin-target` | `--windows=2` | Crossing into the other fixture window never redirects scroll to it. |

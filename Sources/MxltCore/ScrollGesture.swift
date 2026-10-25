@@ -63,7 +63,7 @@ public struct ScrollGesture: Sendable {
     public enum Phase: Equatable, Sendable { case idle, pending, scrolling, cancelled }
 
     public static let maximumClickDuration: TimeInterval = 0.5
-    public static let maximumSpeed: Double = 8_000
+    public static let maximumSpeed: Double = 48_000
     public private(set) var phase: Phase = .idle
     public private(set) var anchor: ScrollPoint?
     public private(set) var velocity: ScrollVelocity = .zero
@@ -111,12 +111,13 @@ public struct ScrollGesture: Sendable {
         }
         let activated = phase == .pending
         phase = .scrolling
-        // Gentle near the anchor, progressively faster farther away. At 1x, offsets
-        // of 10/100/200 points beyond the dead zone request 44/800/2,400 pt/s.
-        // Sensitivity scales the curve; one shared ceiling leaves room to accelerate
-        // beyond the former 2,400 pt/s limit at ordinary sensitivity settings.
+        // Preserve fine control through 200 points beyond the dead zone, then
+        // smoothly add acceleration for traversing long pages. Distance, rather
+        // than touching a screen edge, keeps the response consistent across anchors.
         let displacement = distance - settings.deadZone
-        let speed = min(Self.maximumSpeed, displacement * (4 + displacement / 25) * settings.sensitivity)
+        let farDistance = max(0, displacement - 200)
+        let baseSpeed = displacement * (4 + displacement / 25)
+        let speed = min(Self.maximumSpeed, (baseSpeed + farDistance * farDistance / 5) * settings.sensitivity)
         let direction = settings.reversed ? -1.0 : 1.0
         velocity = ScrollVelocity(x: dx / distance * speed * direction,
                                   y: dy / distance * speed * direction)

@@ -20,7 +20,7 @@ func point(_ dictionary: [String: Any]) -> CGPoint { CGPoint(x: number(dictionar
 func pause(_ seconds: Double) { RunLoop.current.run(until: Date(timeIntervalSinceNow: seconds)) }
 let statePath = argument("--state-path") ?? ""
 let scenario = argument("--case") ?? ""
-let supported = ["click", "passthrough-click", "wheel", "scroll", "nested-scroll", "escape", "quit", "cancel-close", "replacement", "remaining-window", "tab-remains", "command-remains", "pin-target", "pause-held", "disable-held", "toggle-cycles"]
+let supported = ["click", "passthrough-click", "wheel", "scroll", "fast-scroll", "nested-scroll", "escape", "quit", "cancel-close", "replacement", "remaining-window", "tab-remains", "command-remains", "pin-target", "pause-held", "disable-held", "toggle-cycles"]
 var restorationErrors: [String] = []
 var middleHeld = false
 var lastPoint = CGPoint.zero
@@ -316,10 +316,21 @@ func run() throws -> [String: Any] {
         try require(number(after, "events") > number(originalScroll, "events"), "Ordinary wheel input did not reach the fixture")
         try require(number(after, "taggedEvents") == number(originalScroll, "taggedEvents"), "Ordinary wheel input was rewritten by mxlt-utils")
         try require(number(after, "offsetX") > number(originalScroll, "offsetX") && number(after, "offsetY") > number(originalScroll, "offsetY"), "Ordinary wheel input did not scroll the native view")
-    case "scroll", "nested-scroll", "escape", "pin-target":
+    case "scroll", "fast-scroll", "nested-scroll", "escape", "pin-target":
         try mouse(.mouseMoved, at: anchor, button: .center); pause(0.1)
         try mouse(.otherMouseDown, at: anchor, button: .center); pause(0.1)
         var displaced = CGPoint(x: anchor.x + 65, y: anchor.y + 65)
+        if scenario == "fast-scroll" {
+            let display = NSScreen.screens.compactMap { screen -> CGRect? in
+                guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
+                return CGDisplayBounds(id.uint32Value)
+            }.first { $0.contains(anchor) }
+            guard let display else { throw CheckFailure(description: "Cannot resolve the fixture anchor display") }
+            displaced = CGPoint(x: min(anchor.x + 650, display.maxX - 2),
+                                y: min(anchor.y + 650, display.maxY - 2))
+            try require(hypot(displaced.x - anchor.x, displaced.y - anchor.y) >= 650,
+                        "fast-scroll needs at least 650 points of down/right travel on the anchor display")
+        }
         if scenario == "pin-target" {
             guard let other = windows(initial).first(where: { number($0, "windowID") != Double(windowID) }),
                   let frame = other["frame"] as? [String: Any] else { throw CheckFailure(description: "pin-target needs --windows=2") }
@@ -333,9 +344,16 @@ func run() throws -> [String: Any] {
             try require(number(moving, "offsetX") > number(originalScroll, "offsetX") && number(moving, "offsetY") > number(originalScroll, "offsetY"),
                         "Down/right movement did not advance both native scroll axes; use default direction and a fresh fixture")
         }
+        let stationaryStart = ProcessInfo.processInfo.systemUptime
         pause(0.35)
         let stationary = scroll(try currentWindow())
         try require(number(stationary, "taggedEvents") > number(moving, "taggedEvents"), "Scrolling did not continue while the pointer was stationary")
+        if scenario == "fast-scroll" {
+            let travel = hypot(number(stationary, "deltaX") - number(moving, "deltaX"),
+                               number(stationary, "deltaY") - number(moving, "deltaY"))
+            let rate = travel / (ProcessInfo.processInfo.systemUptime - stationaryStart)
+            try require(rate > 8_000, "Far-distance native scroll delivery did not exceed the old speed ceiling")
+        }
         if scenario == "escape" {
             try require(NSWorkspace.shared.frontmostApplication?.processIdentifier == pid, "Fixture lost keyboard focus")
             try key(53)
