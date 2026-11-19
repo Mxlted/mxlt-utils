@@ -672,28 +672,24 @@ private final class MiddleScrollTarget: @unchecked Sendable {
 
     func windowIsValid() -> Bool {
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
-        let cursorProcessID = MiddleScrollCursorOwner.verifiedProcessID(in: windows)
-        var systemHitProcessID: pid_t?
-        if windows.contains(where: { MiddleScrollWindowRouting.isSystemCanvas($0, systemCanvases: systemCanvases,
-                                                                            displayBounds: displayBounds)
-            || MiddleScrollWindowRouting.isSystemCursor($0, cursorProcessID: cursorProcessID) }) {
-            let system = AXUIElementCreateSystemWide()
-            // This is the same process-default bound used by CallQuits. One system-wide hit is
-            // required to distinguish system canvases/capture cursors from interactive system UI.
-            guard AXUIElementSetMessagingTimeout(system, 0.12) == .success else { return false }
-            var hit: AXUIElement?
-            guard AXUIElementCopyElementAtPosition(system, Float(anchor.x), Float(anchor.y), &hit) == .success,
-                  let hit else { return false }
-            var owner: pid_t = 0
-            guard AXUIElementGetPid(hit, &owner) == .success else { return false }
-            systemHitProcessID = owner
-        }
         return MiddleScrollWindowRouting.isValid(windows: windows, processID: processID,
                                                 windowID: windowID, initialBounds: initialBounds,
                                                 initialLayer: initialLayer,
                                                 anchor: anchor, ownProcessID: ProcessInfo.processInfo.processIdentifier,
                                                 systemCanvases: systemCanvases, displayBounds: displayBounds,
-                                                systemHitProcessID: systemHitProcessID, cursorProcessID: cursorProcessID)
+                                                isCursorOwner: MiddleScrollCursorOwner.isWindowServer,
+                                                hitProcessAtAnchor: hitProcessAtAnchor)
+    }
+
+    private func hitProcessAtAnchor() -> pid_t? {
+        let system = AXUIElementCreateSystemWide()
+        guard AXUIElementSetMessagingTimeout(system, 0.12) == .success else { return nil }
+        var hit: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(system, Float(anchor.x), Float(anchor.y), &hit) == .success,
+              let hit else { return nil }
+        var owner: pid_t = 0
+        guard AXUIElementGetPid(hit, &owner) == .success else { return nil }
+        return owner
     }
 
     private static func window(_ id: CGWindowID) -> [String: Any]? {

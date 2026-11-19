@@ -103,55 +103,40 @@ struct MiddleScrollWindowSnapshot {
 
 /// WindowServer metadata policy, exercised without capturing a screen or contacting a real app.
 enum MiddleScrollWindowRouting {
+    private static let cursorLayer = Int64(CGWindowLevelForKey(.cursorWindow))
+
     static func isValid(windows: [[String: Any]], processID: pid_t, windowID: CGWindowID,
                         initialBounds: CGRect, initialLayer: Int, anchor: ScrollPoint, ownProcessID: pid_t,
                         systemCanvases: [pid_t: Int] = [:], displayBounds: [CGRect] = [],
-                        systemHitProcessID: pid_t? = nil, cursorProcessID: pid_t? = nil) -> Bool {
+                        isCursorOwner: (pid_t) -> Bool = { _ in false },
+                        hitProcessAtAnchor: () -> pid_t? = { nil }) -> Bool {
         let point = CGPoint(x: anchor.x, y: anchor.y)
+        var needsSystemHit = false
+        // WindowServer returns these windows front to back. Only a visible overlay
+        // above the exact pinned target can require an additional Accessibility hit.
         for window in windows {
-            guard let bounds = bounds(window),
-                  let alpha = window[kCGWindowAlpha as String] as? NSNumber,
-                  let number = window[kCGWindowNumber as String] as? NSNumber,
+            guard let bounds = bounds(window) else { return false }
+            guard bounds.contains(point) else { continue }
+            guard let alpha = window[kCGWindowAlpha as String] as? NSNumber,
+                  alpha.doubleValue.isFinite else { return false }
+            guard alpha.doubleValue > 0 else { continue }
+            guard let number = window[kCGWindowNumber as String] as? NSNumber,
                   let owner = window[kCGWindowOwnerPID as String] as? NSNumber,
+                  let ownerPID = pid_t(exactly: owner.int64Value),
                   let layer = window[kCGWindowLayer as String] as? NSNumber else { return false }
-            guard bounds.contains(point), alpha.doubleValue > 0 else { continue }
-            // Display capture can expose the system cursor as an opaque WindowServer
-            // window. Only its verified owner and exact cursor level qualify, with a
-            // fresh AX hit proving the underlying app; ordinary covering windows still veto.
-            if isSystemCursor(window, cursorProcessID: cursorProcessID) {
-                guard systemHitProcessID == processID else { return false }
-                continue
-            }
-            // macOS 27 exposes Dock/Notification Center full-display canvases as alpha 1.
-            // Only verified process/layer pairs and exact display rectangles can qualify;
-            // a system-wide AX hit must prove that the anchor still belongs to the target.
-            if systemCanvases[owner.int32Value] == layer.intValue, displayBounds.contains(bounds) {
-                guard systemHitProcessID == processID else { return false }
+            let isCanvas = systemCanvases[ownerPID] == layer.intValue && displayBounds.contains(bounds)
+            if isCanvas || (layer.int64Value == cursorLayer && isCursorOwner(ownerPID)) {
+                needsSystemHit = true
                 continue
             }
             // Only our floating, non-interactive indicator is ignored. A normal settings window
             // covering the anchor cancels just like any other window or menu.
-            if owner.int32Value == ownProcessID && layer.intValue == Int(NSWindow.Level.floating.rawValue) { continue }
-            return number.uint32Value == windowID && owner.int32Value == processID && bounds == initialBounds
-                && layer.intValue == initialLayer
+            if ownerPID == ownProcessID && layer.intValue == Int(NSWindow.Level.floating.rawValue) { continue }
+            guard number.int64Value == Int64(windowID), ownerPID == processID,
+                  bounds == initialBounds, layer.intValue == initialLayer else { return false }
+            return !needsSystemHit || hitProcessAtAnchor() == processID
         }
         return false
-    }
-
-    static func isSystemCursor(_ window: [String: Any], cursorProcessID: pid_t?) -> Bool {
-        guard let cursorProcessID, cursorProcessID > 1,
-              let owner = window[kCGWindowOwnerPID as String] as? NSNumber,
-              owner.int64Value == Int64(cursorProcessID),
-              let layer = window[kCGWindowLayer as String] as? NSNumber else { return false }
-        return layer.int64Value == Int64(CGWindowLevelForKey(.cursorWindow))
-    }
-
-    static func isSystemCanvas(_ window: [String: Any], systemCanvases: [pid_t: Int], displayBounds: [CGRect]) -> Bool {
-        guard let owner = window[kCGWindowOwnerPID as String] as? NSNumber,
-              let layer = window[kCGWindowLayer as String] as? NSNumber,
-              systemCanvases[owner.int32Value] == layer.intValue,
-              let frame = bounds(window), displayBounds.contains(frame) else { return false }
-        return true
     }
 
     static func bounds(_ window: [String: Any]) -> CGRect? {

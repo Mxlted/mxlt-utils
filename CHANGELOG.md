@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Turning middle scrolling off clears its failure warning. Turning it back on checks access and retries once.
+- Middle scrolling checks system overlays at the original press point. An overlay on another display or behind the target no longer triggers an Accessibility hit test.
 - Scroll speed, dead zone, direction, and smoothing take effect on the next middle press. The input monitor stays active while you adjust them.
 
 ## 0.3.8

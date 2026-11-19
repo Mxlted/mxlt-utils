@@ -116,7 +116,8 @@ final class MiddleScrollRoutingTests: XCTestCase {
         func permits(_ overlay: [String: Any], hitPID: Int32? = 42) -> Bool {
             MiddleScrollWindowRouting.isValid(windows: [overlay, window()], processID: 42, windowID: 7,
                                              initialBounds: bounds, initialLayer: 0, anchor: anchor, ownProcessID: 99,
-                                             systemCanvases: [459: 20, 591: 21], displayBounds: [display], systemHitProcessID: hitPID)
+                                             systemCanvases: [459: 20, 591: 21], displayBounds: [display],
+                                             hitProcessAtAnchor: { hitPID })
         }
         XCTAssertTrue(permits(window(id: 15, owner: 459, frame: display, layer: 20)))
         XCTAssertFalse(permits(window(id: 15, owner: 459, frame: display, layer: 20), hitPID: nil))
@@ -146,7 +147,7 @@ final class MiddleScrollRoutingTests: XCTestCase {
             MiddleScrollWindowRouting.isValid(
                 windows: [overlay] + (beneath ?? [window()]), processID: 42, windowID: 7,
                 initialBounds: bounds, initialLayer: 0, anchor: anchor, ownProcessID: 99,
-                systemHitProcessID: hit, cursorProcessID: owner)
+                isCursorOwner: { $0 == owner }, hitProcessAtAnchor: { hit })
         }
         XCTAssertFalse(valid([cursor, window()]), "Reproduces the capture cursor obstruction without verification")
         XCTAssertTrue(permits(cursor))
@@ -163,10 +164,48 @@ final class MiddleScrollRoutingTests: XCTestCase {
     }
 
     func testCursorLevelDoesNotEstablishWindowServerIdentity() {
-        let cursor = window(owner: ProcessInfo.processInfo.processIdentifier,
-                            layer: Int(CGWindowLevelForKey(.cursorWindow)))
-        XCTAssertNil(MiddleScrollCursorOwner.verifiedProcessID(in: [cursor]))
-        XCTAssertNil(MiddleScrollCursorOwner.verifiedProcessID(in: []))
+        XCTAssertFalse(MiddleScrollCursorOwner.isWindowServer(ProcessInfo.processInfo.processIdentifier))
+        XCTAssertFalse(MiddleScrollCursorOwner.isWindowServer(0))
+    }
+
+    func testUnrelatedOverlaysNeedNoAccessibilityHitOrCursorLookup() {
+        let here = CGRect(x: -600, y: 0, width: 600, height: 800)
+        let elsewhere = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let cursorLayer = Int(CGWindowLevelForKey(.cursorWindow))
+        let otherCanvas = window(id: 12, owner: 459, frame: elsewhere, layer: 20)
+        let otherCursor = window(id: 13, owner: 177, frame: elsewhere, layer: cursorLayer)
+        let knownElsewhere = [kCGWindowBounds as String: elsewhere.dictionaryRepresentation]
+        let transparentCursor = window(id: 14, owner: 177, layer: cursorLayer, alpha: 0)
+        let lowerCanvas = window(id: 15, owner: 459, frame: here, layer: 20)
+        let lowerCursor = window(id: 16, owner: 177, layer: cursorLayer)
+        XCTAssertTrue(MiddleScrollWindowRouting.isValid(
+            windows: [otherCanvas, otherCursor, knownElsewhere, transparentCursor, window(), lowerCanvas, lowerCursor],
+            processID: 42, windowID: 7, initialBounds: bounds, initialLayer: 0, anchor: anchor, ownProcessID: 99,
+            systemCanvases: [459: 20], displayBounds: [here, elsewhere],
+            isCursorOwner: { _ in XCTFail("Unrelated cursor"); return false },
+            hitProcessAtAnchor: { XCTFail("Unrelated overlay"); return nil }))
+        XCTAssertFalse(valid([[kCGWindowBounds as String: here.dictionaryRepresentation], window()]))
+    }
+
+    func testStackedOverlaysNeedOneFreshHitPerValidationAfterMatchingTarget() {
+        let display = CGRect(x: -600, y: 0, width: 600, height: 800)
+        let cursor = window(id: 12, owner: 177, layer: Int(CGWindowLevelForKey(.cursorWindow)))
+        let canvas = window(id: 13, owner: 459, frame: display, layer: 20)
+        var hitReads = 0
+        var hit: pid_t? = 42
+        func permits(_ beneath: [String: Any]) -> Bool {
+            MiddleScrollWindowRouting.isValid(windows: [cursor, canvas, beneath, window()], processID: 42,
+                windowID: 7, initialBounds: bounds, initialLayer: 0, anchor: anchor, ownProcessID: 99,
+                systemCanvases: [459: 20], displayBounds: [display], isCursorOwner: { $0 == 177 },
+                hitProcessAtAnchor: { hitReads += 1; return hit })
+        }
+        XCTAssertTrue(permits(window()))
+        XCTAssertEqual(hitReads, 1)
+        hit = nil
+        XCTAssertFalse(permits(window()))
+        XCTAssertEqual(hitReads, 2)
+        XCTAssertFalse(permits(window(id: 99, owner: 43)))
+        XCTAssertEqual(hitReads, 2)
     }
 
     func testNativeReplayPairRetainsButtonModifiersAndClickCountAtOriginalAnchor() throws {
