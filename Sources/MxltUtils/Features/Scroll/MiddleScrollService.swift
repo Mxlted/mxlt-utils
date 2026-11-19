@@ -5,7 +5,7 @@ import QuartzCore
 
 /// Filters only a held middle-button sequence. Wheel and trackpad events never enter this tap.
 @MainActor
-final class MiddleScrollService {
+class MiddleScrollService {
     static let syntheticEventTag = MiddleScrollEventRouting.syntheticTag
     var onAuxiliaryPress: (() -> Void)?
     var onMiddleClickBegan: ((CGEvent) -> UInt64?)?
@@ -21,7 +21,7 @@ final class MiddleScrollService {
     private var displayLink: CADisplayLink?
     private var observers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
-    private var settings = ScrollSettings()
+    private var readSettings: () -> ScrollSettings = { ScrollSettings() }
     private var exclusions: Set<String> = []
     private var enabled = false
     private var eligibleProcesses: Set<pid_t> = []
@@ -53,10 +53,10 @@ final class MiddleScrollService {
 
     /// A restart never reinterprets a button that was already held as a new gesture.
     @discardableResult
-    func start(settings: ScrollSettings, exclusions: Set<String>) -> Bool {
+    func start(readSettings: @escaping () -> ScrollSettings, exclusions: Set<String>) -> Bool {
         debugLog("start requested")
-        self.settings = settings
-        self.exclusions = Set(exclusions.map { $0.lowercased() })
+        self.readSettings = readSettings
+        self.exclusions = exclusions
         refreshEligibleProcesses()
         cancel(reason: "restart")
         enabled = true
@@ -116,6 +116,14 @@ final class MiddleScrollService {
         installObservers()
         debugLog("tap ready")
         return true
+    }
+
+    func updateExclusions(_ exclusions: Set<String>) {
+        guard self.exclusions != exclusions else { return }
+        self.exclusions = exclusions
+        // Invalidate held gestures and any released click still awaiting validation.
+        cancel(reason: "exclusions changed")
+        refreshEligibleProcesses()
     }
 
     func stop() {
@@ -241,7 +249,7 @@ final class MiddleScrollService {
             else { debugLog("down bypass: native identity unavailable"); return false }
             guard eligibleProcesses.contains(sequence.processID)
             else { debugLog("down bypass: ineligible process"); return false }
-            guard gesture.begin(at: sequence.anchor, timestamp: sequence.timestamp, settings: settings)
+            guard gesture.begin(at: sequence.anchor, timestamp: sequence.timestamp, settings: readSettings())
             else { debugLog("down bypass: invalid gesture"); return false }
             debugLog("down captured")
 #if DEBUG
@@ -354,7 +362,7 @@ final class MiddleScrollService {
     }
 
     private func startDisplayLink(at anchor: ScrollPoint) {
-        guard settings.smooth, displayLink == nil else { return }
+        guard gesture.settings.smooth, displayLink == nil else { return }
         // Use Quartz display bounds, matching the captured anchor even on screens
         // above or left of the main display. Do not follow the moving pointer.
         let point = CGPoint(x: anchor.x, y: anchor.y)

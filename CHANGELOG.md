@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Turning middle scrolling off clears its failure warning. Turning it back on checks access and retries once.
+- Scroll speed, dead zone, direction, and smoothing take effect on the next middle press. The input monitor stays active while you adjust them.
+
 ## 0.3.8
 
 - Add stronger middle-scroll acceleration far from the anchor, with six times the previous maximum speed while preserving fine control nearby and immediate stops.

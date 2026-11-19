@@ -8,7 +8,15 @@ import UniformTypeIdentifiers
 @MainActor
 final class ScrollModel: ObservableObject {
     private let defaults: UserDefaults
-    @Published var enabled: Bool { didSet { defaults.set(enabled, forKey: "scroll.enabled") } }
+    var onEnabledChange: (() -> Void)?
+    var onExclusionsChange: (() -> Void)?
+    @Published var enabled: Bool {
+        didSet {
+            guard enabled != oldValue else { return }
+            defaults.set(enabled, forKey: "scroll.enabled")
+            onEnabledChange?()
+        }
+    }
     @Published var sensitivity: Double {
         didSet {
             let value = ScrollSettings(sensitivity: sensitivity).sensitivity
@@ -26,8 +34,13 @@ final class ScrollModel: ObservableObject {
     @Published var reversed: Bool { didSet { defaults.set(reversed, forKey: "scroll.reversed") } }
     @Published var smooth: Bool { didSet { defaults.set(smooth, forKey: "scroll.smooth") } }
     @Published var exclusions: [AppException] {
-        didSet { if let data = try? JSONEncoder().encode(exclusions) { defaults.set(data, forKey: "scroll.exclusions") } }
+        didSet {
+            guard exclusions != oldValue else { return }
+            if let data = try? JSONEncoder().encode(exclusions) { defaults.set(data, forKey: "scroll.exclusions") }
+            onExclusionsChange?()
+        }
     }
+    var excludedBundleIDs: Set<String> { Set(exclusions.map { $0.bundleID.lowercased() }) }
     @Published var status = "Off"
     var settings: ScrollSettings {
         ScrollSettings(sensitivity: sensitivity, deadZone: deadZone, reversed: reversed,
@@ -74,43 +87,46 @@ final class ScrollModel: ObservableObject {
 @MainActor
 final class UtilityModel: ObservableObject {
     static let shared = UtilityModel()
-    let quit = QuitModel()
-    let scroll = ScrollModel()
-    @Published var paused = UserDefaults.standard.bool(forKey: "paused") {
-        didSet { UserDefaults.standard.set(paused, forKey: "paused"); reconcile() }
+    let quit: QuitModel
+    let scroll: ScrollModel
+    private let defaults: UserDefaults
+    @Published var paused: Bool {
+        didSet { defaults.set(paused, forKey: "paused"); reconcile() }
     }
     @Published private var suspension = SessionSuspension()
     var sessionSuspended: Bool { suspension.isSuspended }
     private lazy var quitMonitor = CloseMonitor(model: quit)
-    private let scrollService = MiddleScrollService()
+    private let scrollService: MiddleScrollService
     private var quitStarted = false
-    private var scrollConfiguration: ScrollConfiguration?
+    private enum ScrollMonitoring { case stopped, running, failed }
+    private var scrollMonitoring = ScrollMonitoring.stopped
     private var permissionTimer: Timer?
     private var subscriptions: Set<AnyCancellable> = []
     private var workspaceObservers: [NSObjectProtocol] = []
     private var updateQueued = false
     private var started = false
-    private var scrollFailed = false
-    private var lastPermission = false
 
-    var inputAccessNeedsRetry: Bool { scroll.enabled && scrollService.inputAccessUnavailable }
+    init(defaults: UserDefaults = .standard, quit: QuitModel? = nil, scrollService: MiddleScrollService? = nil) {
+        self.defaults = defaults
+        self.quit = quit ?? QuitModel(defaults: defaults)
+        self.scroll = ScrollModel(defaults: defaults)
+        self.scrollService = scrollService ?? MiddleScrollService()
+        self.paused = defaults.bool(forKey: "paused")
+    }
+
+    var inputAccessNeedsRetry: Bool { scroll.enabled && scrollMonitoring == .failed && scrollService.inputAccessUnavailable }
     private var scrollFailureStatus: String {
         inputAccessNeedsRetry ? "Input access unavailable — retry" : "Monitoring unavailable — retry"
     }
 
-    private struct ScrollConfiguration: Equatable {
-        let sensitivity: Double
-        let deadZone: Double
-        let reversed: Bool
-        let smooth: Bool
-        let exclusions: Set<String>
-    }
     var status: String {
         if paused { return "Paused" }
         if sessionSuspended { return "Session inactive" }
         if !quit.enabled && !scroll.enabled { return "Choose a feature to begin" }
         if !quit.accessibilityGranted { return "Accessibility access needed" }
-        if quit.enabled && quit.monitoringState == .unavailable || scrollFailed { return "Some features need attention" }
+        if (quit.enabled && quit.monitoringState == .unavailable) || (scroll.enabled && scrollMonitoring == .failed) {
+            return "Some features need attention"
+        }
         return "Ready"
     }
 
@@ -118,6 +134,17 @@ final class UtilityModel: ObservableObject {
         guard !started else { return }; started = true
         quit.objectWillChange.sink { [weak self] _ in self?.queueUpdate() }.store(in: &subscriptions)
         scroll.objectWillChange.sink { [weak self] _ in self?.queueUpdate() }.store(in: &subscriptions)
+        // Observe both edges even when SwiftUI coalesces an off/on pair into one update.
+        scroll.onEnabledChange = { [weak self] in
+            guard let self else { return }
+            if self.scrollMonitoring == .failed { self.scrollMonitoring = .stopped }
+            if self.scroll.enabled { self.quit.refreshPermission() }
+            self.reconcile()
+        }
+        scroll.onExclusionsChange = { [weak self] in
+            guard let self, self.scrollMonitoring == .running else { return }
+            self.scrollService.updateExclusions(self.scroll.excludedBundleIDs)
+        }
         scrollService.onAuxiliaryPress = { [weak self] in self?.quitMonitor.cancelForAuxiliaryInput() }
         scrollService.onMiddleClickBegan = { [weak self] in self?.quitMonitor.beginInterceptedMiddleClick($0) }
         scrollService.onMiddleClickFinished = { [weak self] token, release in
@@ -129,12 +156,14 @@ final class UtilityModel: ObservableObject {
         scrollService.onFailure = { [weak self] in
             guard let self else { return }
             self.quit.refreshPermission()
-            self.scrollConfiguration = nil
-            self.scrollFailed = self.quit.accessibilityGranted
-            self.setScrollStatus(self.scrollFailed ? self.scrollFailureStatus : "Accessibility access needed")
+            self.scrollMonitoring = .stopped
+            guard self.scroll.enabled, !self.paused, !self.sessionSuspended else { self.reconcile(); return }
+            guard self.quit.accessibilityGranted else { self.reconcile(); return }
+            self.scrollMonitoring = .failed
+            self.setScrollStatus(self.scrollFailureStatus)
             if self.inputAccessNeedsRetry {
                 self.quit.record("Middle scrolling stopped because input access is unavailable. Restore Accessibility access, then retry monitoring.")
-            } else if self.scrollFailed { self.quit.record("Middle scrolling stopped. Retry monitoring in Settings.") }
+            } else { self.quit.record("Middle scrolling stopped. Retry monitoring in Settings.") }
         }
         let center = NSWorkspace.shared.notificationCenter
         let suspensionNotifications: [(Notification.Name, SessionSuspension.Reason, Bool)] = [
@@ -173,9 +202,7 @@ final class UtilityModel: ObservableObject {
     }
 
     func retry() {
-        scrollFailed = false
-        scrollService.stopImmediately()
-        scrollConfiguration = nil
+        if scrollMonitoring == .failed { scrollMonitoring = .stopped }
         quit.retryMonitoring()
         reconcile()
     }
@@ -192,7 +219,6 @@ final class UtilityModel: ObservableObject {
         } else if !quit.enabled && !scroll.enabled {
             permissionTimer?.invalidate(); permissionTimer = nil
         }
-        if lastPermission != quit.accessibilityGranted { scrollFailed = false; lastPermission = quit.accessibilityGranted }
         let suspended = paused || sessionSuspended
         if quit.suspended != suspended { quit.suspended = suspended }
         let runQuit = quit.effectiveEnabled && quit.accessibilityGranted
@@ -201,31 +227,36 @@ final class UtilityModel: ObservableObject {
         if !runQuit {
             quit.setMonitoringState(quit.effectiveEnabled && !quit.accessibilityGranted ? .permissionNeeded : .paused)
         }
-        let shouldScroll = scroll.enabled && !suspended && quit.accessibilityGranted
-        if shouldScroll && !scrollFailed {
-            let configuration = ScrollConfiguration(sensitivity: scroll.sensitivity, deadZone: scroll.deadZone, reversed: scroll.reversed,
-                                                    smooth: scroll.smooth,
-                                                    exclusions: Set(scroll.exclusions.map { $0.bundleID.lowercased() }))
-            if scrollConfiguration != configuration {
-                scrollService.stop()
-                scrollConfiguration = configuration
-                scrollFailed = !scrollService.start(settings: scroll.settings, exclusions: configuration.exclusions)
-            }
-            setScrollStatus(scrollFailed ? scrollFailureStatus : "Ready — hold the mouse wheel")
-        } else {
+        reconcileScrolling(suspended: suspended)
+    }
+
+    private func reconcileScrolling(suspended: Bool) {
+        guard scroll.enabled, !suspended, quit.accessibilityGranted else {
             if !quit.accessibilityGranted {
+                // A stopped service may still be draining an intercepted release.
                 scrollService.stopImmediately()
-                scrollConfiguration = nil
-            } else if scrollConfiguration != nil { scrollService.stop(); scrollConfiguration = nil }
-            setScrollStatus(!scroll.enabled ? "Off" : suspended ? "Paused" : !quit.accessibilityGranted ? "Accessibility access needed" : scrollFailureStatus)
+                scrollMonitoring = .stopped
+            } else if scrollMonitoring == .running {
+                scrollService.stop()
+                scrollMonitoring = .stopped
+            }
+            setScrollStatus(!scroll.enabled ? "Off" : suspended ? "Paused" : "Accessibility access needed")
+            return
         }
+        if scrollMonitoring == .stopped {
+            let running = scrollService.start(readSettings: { [scroll] in scroll.settings }, exclusions: scroll.excludedBundleIDs)
+            scrollMonitoring = running ? .running : .failed
+        }
+        setScrollStatus(scrollMonitoring == .running ? "Ready — hold the mouse wheel" : scrollFailureStatus)
     }
     private func setScrollStatus(_ value: String) { if scroll.status != value { scroll.status = value } }
 
     func stop() {
         started = false
         quitMonitor.stop(); quitStarted = false
-        scrollService.stopImmediately(); scrollConfiguration = nil
+        scrollService.stopImmediately(); scrollMonitoring = .stopped
+        scroll.onEnabledChange = nil
+        scroll.onExclusionsChange = nil
         permissionTimer?.invalidate(); permissionTimer = nil
         subscriptions.removeAll()
         workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }; workspaceObservers.removeAll()

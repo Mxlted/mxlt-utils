@@ -67,7 +67,8 @@ public struct ScrollGesture: Sendable {
     public private(set) var phase: Phase = .idle
     public private(set) var anchor: ScrollPoint?
     public private(set) var velocity: ScrollVelocity = .zero
-    private var settings = ScrollSettings()
+    /// Snapshot shared by motion integration and native display scheduling for this press.
+    public private(set) var settings = ScrollSettings()
     private var startedAt: TimeInterval = 0
     private var motion = ScrollMotion()
 
