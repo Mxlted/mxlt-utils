@@ -13,6 +13,10 @@ The tests use isolated preferences and pure decision logic where possible. Acces
 
 Coverage includes close eligibility and native identity, down/up movement, shortcut gating, force protections, sheets/save cancellation, remaining/replacement windows, Discord's narrow hidden-close policy, bounded AX recovery, settings/permission transitions, scroll velocity/transitions, click replay, synthetic tagging, pinned-window validation, and independent session suspension.
 
+## Unreleased scrolling and menu changes
+
+Coordinator tests cover failed starts, off/on recovery, permission and pause transitions, and motion settings changing between presses. Window-list fixtures cover overlays on another display, behind the target, and stacked over the anchor. A running-app check used Accessibility to select both exception actions for a disposable foreground app. Reopening the menu showed both entries disabled, and each preference list contained the fixture's bundle identifier once. Physical mouse and dual-display checks remain open.
+
 ## 0.3.8 Faster distance scrolling
 
 The October 25, 2026 distance update passes 214 XCTest cases, including continuity at the acceleration threshold, unchanged close-range speeds, bounded extreme inputs, symmetry, fast diagonal travel at 30–240 Hz, reversal, and clearing full-speed motion on dead-zone return, release, cancellation and reset. The signed Release preview also passes synthetic native `fast-scroll`, `scroll`, `click` and `escape` checks with OBS Display Capture active. `fast-scroll` measures delivered content-view deltas while stationary and requires a rate above the previous 8,000 pt/s ceiling, then verifies dead-zone/release stops and no leaked click. These checks establish event delivery and stopping behavior, not physical-mouse feel or equivalence to a particular Windows app.

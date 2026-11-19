@@ -3,7 +3,6 @@ import ApplicationServices
 import Combine
 import MxltCore
 import SwiftUI
-import UniformTypeIdentifiers
 
 @MainActor
 final class ScrollModel: ObservableObject {
@@ -67,20 +66,9 @@ final class ScrollModel: ObservableObject {
     }
 
     func addException() {
-        let panel = NSOpenPanel()
-        panel.title = "Keep middle-drag unchanged"
-        panel.message = "Middle scrolling will leave these apps alone."
-        panel.allowedContentTypes = [.applicationBundle]
-        panel.allowsMultipleSelection = true
-        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
-        guard panel.runModal() == .OK else { return }
-        for url in panel.urls {
-            guard let bundle = Bundle(url: url), let id = bundle.bundleIdentifier,
-                  !exclusions.contains(where: { $0.bundleID.caseInsensitiveCompare(id) == .orderedSame }) else { continue }
-            exclusions.append(AppException(bundleID: id, name: bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-                ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String ?? url.deletingPathExtension().lastPathComponent))
-        }
-        exclusions.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let chosen = AppException.choose(title: "Keep middle-drag unchanged",
+                                         message: "Middle scrolling will leave these apps alone.")
+        exclusions.addApplications(chosen)
     }
 }
 
@@ -89,6 +77,7 @@ final class UtilityModel: ObservableObject {
     static let shared = UtilityModel()
     let quit: QuitModel
     let scroll: ScrollModel
+    @Published private(set) var menuApplication: MenuApplication?
     private let defaults: UserDefaults
     @Published var paused: Bool {
         didSet { defaults.set(paused, forKey: "paused"); reconcile() }
@@ -132,6 +121,12 @@ final class UtilityModel: ObservableObject {
 
     func start() {
         guard !started else { return }; started = true
+        NSWorkspace.shared.publisher(for: \.frontmostApplication, options: [.initial, .new])
+            .receive(on: DispatchQueue.main)
+            .map { MenuApplication($0) }
+            .removeDuplicates()
+            .sink { [weak self] in self?.menuApplication = $0 }
+            .store(in: &subscriptions)
         quit.objectWillChange.sink { [weak self] _ in self?.queueUpdate() }.store(in: &subscriptions)
         scroll.objectWillChange.sink { [weak self] _ in self?.queueUpdate() }.store(in: &subscriptions)
         // Observe both edges even when SwiftUI coalesces an off/on pair into one update.
@@ -259,6 +254,7 @@ final class UtilityModel: ObservableObject {
         scroll.onExclusionsChange = nil
         permissionTimer?.invalidate(); permissionTimer = nil
         subscriptions.removeAll()
+        menuApplication = nil
         workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }; workspaceObservers.removeAll()
     }
 }

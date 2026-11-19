@@ -102,6 +102,8 @@ Version 0.3.5 checks whether input access still works when an enabled Accessibil
 
 Add it under **Quit on Close → Keep these apps running** or **Middle scrolling → Leave middle-drag unchanged**. Music, Spotify, Mail, Messages, FaceTime, Terminal, and iTerm start as editable quit exceptions. Finder, system processes, and mxlt-utils are always protected.
 
+In builds from the current source, you can also open the mxlt-utils menu while using the app and choose **Keep [app] running** or **Disable middle scrolling in [app]**. Remove an exception in the corresponding Settings pane.
+
 </details>
 
 <details>

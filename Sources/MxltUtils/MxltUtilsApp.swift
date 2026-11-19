@@ -12,6 +12,18 @@ struct MxltUtilsApp: App {
             Divider()
             Toggle("Quit on Close", isOn: Binding(get: { model.quit.enabled }, set: { model.quit.enabled = $0 }))
             Toggle("Middle scrolling", isOn: Binding(get: { model.scroll.enabled }, set: { model.scroll.enabled = $0 }))
+            if let target = model.menuApplication {
+                Divider()
+                let app = target.exception
+                let keptRunning = target.protectedFromQuit || model.quit.isExcluded(app.bundleID)
+                Button(keptRunning ? "\(app.name) is kept running" : "Keep \(app.name) running") {
+                    model.quit.exclusions.addApplications([app])
+                }.disabled(keptRunning)
+                let scrollExcluded = model.scroll.exclusions.contains(bundleID: app.bundleID)
+                Button(scrollExcluded ? "Middle scrolling is disabled in \(app.name)" : "Disable middle scrolling in \(app.name)") {
+                    model.scroll.exclusions.addApplications([app])
+                }.disabled(scrollExcluded)
+            }
             Divider()
             Toggle("Pause all features", isOn: $model.paused)
             if !model.quit.accessibilityGranted && (model.quit.enabled || model.scroll.enabled) {

@@ -6,13 +6,6 @@ import CallQuitsCore
 #endif
 import ServiceManagement
 import SwiftUI
-import UniformTypeIdentifiers
-
-struct AppException: Identifiable, Codable, Equatable {
-    var id: String { bundleID }
-    let bundleID: String
-    let name: String
-}
 
 struct ActivityEntry: Identifiable {
     let id = UUID()
@@ -217,29 +210,13 @@ final class QuitModel: ObservableObject {
     }
 
     func isExcluded(_ bundleID: String) -> Bool {
-        exclusions.contains { $0.bundleID.caseInsensitiveCompare(bundleID) == .orderedSame }
+        exclusions.contains(bundleID: bundleID)
     }
 
     func addException() {
-        let panel = NSOpenPanel()
-        panel.title = "Keep an application running"
-        panel.message = "Quit on Close will leave this app running."
-        panel.prompt = "Add exception"
-        panel.allowedContentTypes = [.applicationBundle]
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.allowsMultipleSelection = true
-        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
-        guard panel.runModal() == .OK else { return }
-        for url in panel.urls {
-            guard let bundle = Bundle(url: url), let bundleID = bundle.bundleIdentifier else { continue }
-            guard !isExcluded(bundleID) else { continue }
-            let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-                ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
-                ?? url.deletingPathExtension().lastPathComponent
-            exclusions.append(AppException(bundleID: bundleID, name: name))
-        }
-        exclusions.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let chosen = AppException.choose(title: "Keep an application running",
+                                         message: "Quit on Close will leave this app running.", prompt: "Add exception")
+        exclusions.addApplications(chosen)
     }
 
     private func updateLaunchAtLogin() {
