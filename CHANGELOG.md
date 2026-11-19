@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.9
 
 - Turning middle scrolling off clears its failure warning. Turning it back on checks access and retries once.
 - Middle scrolling checks system overlays at the original press point. An overlay on another display or behind the target no longer triggers an Accessibility hit test.

@@ -13,9 +13,11 @@ The tests use isolated preferences and pure decision logic where possible. Acces
 
 Coverage includes close eligibility and native identity, down/up movement, shortcut gating, force protections, sheets/save cancellation, remaining/replacement windows, Discord's narrow hidden-close policy, bounded AX recovery, settings/permission transitions, scroll velocity/transitions, click replay, synthetic tagging, pinned-window validation, and independent session suspension.
 
-## Unreleased scrolling and menu changes
+## 0.3.9 scrolling and menu changes
 
 Coordinator tests cover failed starts, off/on recovery, permission and pause transitions, and motion settings changing between presses. Window-list fixtures cover overlays on another display, behind the target, and stacked over the anchor. A running-app check used Accessibility to select both exception actions for a disposable foreground app. Reopening the menu showed both entries disabled, and each preference list contained the fixture's bundle identifier once. Physical mouse and dual-display checks remain open.
+
+All 223 XCTest cases passed. The Developer ID signed 0.3.9 candidate also passed ten checks using synthetic mouse input and a disposable AppKit fixture. These covered short-click replay, scrolling at normal and high speeds, Escape cancellation, pinning to the original window, pause and disable while held, and three disable/enable cycles. Quit on Close gracefully quit the fixture after its last window closed and kept it running with a minimized window remaining.
 
 ## 0.3.8 Faster distance scrolling
 
