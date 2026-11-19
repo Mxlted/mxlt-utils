@@ -85,7 +85,7 @@ final class UtilityControls {
         root = AXUIElementCreateApplication(application.processIdentifier)
         AXUIElementSetMessagingTimeout(root, 0.12)
         initialScroll = try Self.checkbox("Middle scrolling", root: root)
-        initialQuit = try Self.checkbox("CallQuits", root: root)
+        initialQuit = try Self.checkbox("Quit on Close", root: root)
         initialPaused = try Self.paused(root: root)
     }
     private static func value(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
@@ -149,7 +149,7 @@ final class UtilityControls {
         try require(try Self.paused(root: root) == paused, "Pause control did not reach the requested state")
     }
     func assertQuitUnchanged() throws {
-        try require(try Self.checkbox("CallQuits", root: root) == initialQuit, "The scrolling lifecycle changed CallQuits' enabled setting")
+        try require(try Self.checkbox("Quit on Close", root: root) == initialQuit, "The scrolling lifecycle changed the Quit on Close setting")
     }
     func restore() throws {
         try setScroll(initialScroll)

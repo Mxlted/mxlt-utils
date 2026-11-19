@@ -34,7 +34,7 @@ The state file atomically records at most 80 lifecycle messages, window IDs, fix
 | `pin-target` | `--windows=2` | Crossing into the other fixture window never redirects scroll to it. |
 | `pause-held` | none | The public Pause control stops an active held gesture; resuming cannot revive it, and a fresh click works. |
 | `disable-held` | none | Disabling middle scrolling stops an active gesture without leaking a button half or replaying a canceled click. |
-| `toggle-cycles` | none | Three disable/enable cycles alternate native passthrough and tagged replay, without changing CallQuits' enabled setting. |
+| `toggle-cycles` | none | Three disable/enable cycles alternate native passthrough and tagged replay while Quit on Close retains its setting. |
 | `quit` | none | Final red-button close causes a graceful quit, witnessed by the fixture. |
 | `cancel-close` | `--dirty` | Canceling the native save sheet keeps the window alive beyond the close-attempt deadline. |
 | `replacement` | `--replace` | A replacement window prevents a quit request. |
@@ -48,7 +48,7 @@ The runner releases its injected middle-button state even after a failed asserti
 
 ## Lifecycle checks
 
-For `pause-held`, `disable-held`, and `toggle-cycles`, open mxlt-utils Settings on **General** first. Launch the fixture with `--left-for-settings` to place it near the display's left edge, then ensure Settings does not cover its center. Start with middle scrolling enabled and global pause off. The runner reads and presses the actual Accessibility controls by their exact labels. It changes no defaults directly and uses no product test hooks. It restores the initial scrolling and pause choices, reports restoration failures, and verifies that CallQuits' enabled choice stays unchanged. Keep the mouse and keyboard idle until the result prints.
+For `pause-held`, `disable-held`, and `toggle-cycles`, open mxlt-utils Settings on **General** first. Launch the fixture with `--left-for-settings` to place it near the display's left edge, then ensure Settings does not cover its center. Start with middle scrolling enabled and global pause off. The runner reads and presses the actual Accessibility controls by their exact labels. It changes no defaults directly and uses no product test hooks. It restores the initial scrolling and pause choices, reports restoration failures, and verifies the Quit on Close setting. Keep the mouse and keyboard idle until the result prints.
 
 The held cases first require tagged scrolling to begin. They change the setting while the pointer remains away from the anchor, check that delivery stops, resume while the button is still held, and verify that a new movement does not revive the canceled gesture. They finally release and check a new short click. These checks need the real running feature to work; they cannot pass by testing a disabled utility.
 
